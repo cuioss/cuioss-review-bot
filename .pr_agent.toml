@@ -350,7 +350,20 @@ commitable_code_suggestions = true
 # Suppress the parts of the output that are UI rather than findings — the same treatment
 # [pr_reviewer] gets above, and for the same reason: a consumer that collects this bot's comments
 # as findings files every one of them as something to triage.
-enable_intro_text = false
+#
+# The suppression here is NARROWER than [pr_reviewer]'s, and the difference is a real gap rather
+# than an oversight. `enable_intro_text` does NOT exist under [pr_code_suggestions] in the pinned
+# v0.39.0 image — the section declares 23 keys and that is not among them. It is a real key, but
+# scoped to [pr_reviewer], which is exactly why a file-scoped grep for it returns a hit that says
+# nothing about this section. It was set here once, on that mistaken reading, and was inert.
+#
+# No key under [pr_code_suggestions] is a rename of it. `publish_output_no_suggestions` and
+# `persistent_comment` are behavioural neighbours, not drop-in equivalents, so substituting either
+# would replace one unverified claim with another. The /improve preamble is therefore UNSUPPRESSED
+# and that is a known, accepted state — not something a future edit should "fix" by guessing a key.
+#
+# Verify any addition here SECTION-SCOPED, never file-scoped: `enable_help_text` alone appears in
+# nine sections of configuration.toml with differing defaults ([pr_analyze] defaults true).
 enable_help_text = false
 enable_chat_text = false
 
