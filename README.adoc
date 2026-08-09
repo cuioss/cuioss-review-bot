@@ -497,6 +497,30 @@ error.
 If a repository's project rules stop being honoured for no apparent reason, count the lines
 before suspecting the model.
 
+[#agents-file-case]
+=== `repo_context_files` is case-sensitive, and `agents.md` is not `AGENTS.md`
+
+`repo_context_files` is `["CLAUDE.md", "AGENTS.md"]`. That lookup resolves through GitHub's
+contents API, which is *case-sensitive*. A repository that tracks a lowercase `agents.md` therefore
+hands this reviewer nothing from that file — and hands it nothing *silently*, because a context
+file that cannot be fetched is simply absent from the prompt. There is no error, and the review
+that follows looks exactly like a review that read the file and found it unremarkable.
+
+This is not hypothetical. `cuioss/TokenSheriff` tracked a lowercase `agents.md`, so half of its
+intended reviewer context had never once been delivered. `cuioss/plan-marshall` tracks `AGENTS.md`
+and was unaffected — which is why the defect survived: the repository most likely to notice was the
+one repository it could not affect.
+
+The upstream cause is worth naming, because it makes the failure reproducible rather than a
+one-off: plan-marshall's own `tools-sync-agents-file` command *wrote* the lowercase name, so any
+repository whose agents file was produced by that tooling inherited the defect. Both the command and
+the steward check that mirrors it now emit and expect the uppercase name.
+
+*The rule.* The file is `AGENTS.md`, never `agents.md`, and a rename between the two is a *case
+change* — on a case-insensitive filesystem a naive `mv` is a silent no-op. Use `git mv`, and verify
+against the index (`git ls-files AGENTS.md agents.md`) rather than against the working tree, which
+cannot tell you the truth here.
+
 [#diff-only-ceiling]
 === This reviewer is diff-only, and that is a ceiling rather than a setting
 
@@ -891,6 +915,85 @@ what produces invented mechanisms, and this reviewer has done it once already �
 confident finding about a branch that cannot be reached. The charter's anti-fabrication clause is
 load-bearing and must survive any future tuning of this section.
 
+[#instruction-packs]
+=== The charter is composed per domain, and a repository carries exactly one pack
+
+The charter in this file is the *spine*: the cross-cutting security and correctness categories that
+apply to any codebase. What it cannot carry is a language's own defect vocabulary, and the cost of
+that was measured rather than suspected — a 58-pull-request sweep found findings on 4 of 13
+Python and markdown pull requests and *0 of 19 Java ones*. A single generic charter is shaped like
+whichever language its author had in mind.
+
+The fix is a repository-local `.pr_agent.toml` carrying a `[pr_reviewer].extra_instructions` *pack*
+for that repository's domains, merged above this file. Packs are generated — never hand-written —
+from `cuioss/plan-marshall`'s `marketplace/targets` `pr-agent` target, which reads the same bundle
+sources that supply the organization's own standards:
+
+[source,bash]
+----
+python3 marketplace/targets/generate.py --target pr-agent --output . --packs java
+----
+
+Three properties are load-bearing, and each is a way the mechanism could quietly degrade:
+
+* *One pack per repository — swap, never accumulate.* Regenerating REPLACES the pack rather than
+appending to it. A repository whose packs accumulated would drift back toward the generic charter
+this mechanism exists to replace, one merge at a time. A single pack may still *compose* several
+domains, because a repository is not always one language, and a composed pack still contributes
+exactly one review category.
+* *The pack carries the domain rules only.* Everything else — model, token budgets, output
+suppression, the spine categories — is inherited from this file. Restating a central key in a
+generated pack decentralizes the setting that <<dead-config,this whole repository exists to
+centralize>>, and it does so invisibly, because the local file legitimately outranks this one.
+* *The category ceiling is now enforced by a test, not by discipline.* <<recall-over-precision>>
+caps the charter at roughly ten categories, because a single agent accumulating rules in one
+growing prompt degrades. That cap used to depend on whoever was editing noticing it. The generator
+now carries a regression test that fails when a generated pack exceeds the ceiling, or when the
+substantiation bar and anti-fabrication clause are diluted as packs are composed.
+
+The last point is the one worth trusting least on appearance: the substantiation bar is carried
+into every generated pack *verbatim*, and the test exists because "the generator copied it" is
+exactly the kind of claim that stays true until a refactor makes it silently false.
+
+[#improve-mechanics]
+=== What was actually checked about `/improve`
+
+Two beliefs about `/improve` were load-bearing for enabling it, and both had been assembled from
+circumstantial evidence rather than read. Both turned out to be wrong. They are recorded here with
+their sources so the next reader does not re-derive them — and, more to the point, does not act on
+the plausible version.
+
+*There is no `pr_reviewer.inline_code_comments`.* The attractive theory was that `/review` could be
+made to publish its findings inline, which would be strictly cheaper than `/improve` — no second
+tool invocation and no doubled token cost. It does not exist. At upstream tag `v0.39.0` the
+`[pr_reviewer]` section of `pr_agent/settings/configuration.toml` declares no such key, and
+`pr_agent/tools/pr_reviewer.py` publishes only through `publish_comment` and
+`publish_persistent_comment` — there is no `publish_inline_comments` or `publish_code_suggestions`
+call in that file. Setting the key would be an inert unknown key, which is the
+<<dead-config,dead-config trap>> in its purest form: it would parse, appear in the resolved-config
+dump, and do nothing. Inline publishing belongs to `/improve`, through
+`[pr_code_suggestions] commitable_code_suggestions` (default `false`) or
+`dual_publishing_score_threshold`.
+
+*`restricted_mode = true` does not gate `/improve`.* This was the live risk, since a reviewer that
+fails closed under the setting would have made the label gate useless. It does not. `restricted_mode`
+is declared in `[config]` defaulting to `false`, and its sole consumption is
+`GithubProvider.is_supported`, which returns `False` for exactly one capability string:
+`push_code`. The confirmed consumer of that capability is `pr_agent/tools/pr_update_changelog.py`,
+which degrades gracefully to a comment. `pr_agent/tools/pr_code_suggestions.py` contains no
+occurrence of `restricted_mode` at all, and its publish paths go through the pull request review
+API (`pull-requests: write`) rather than `contents: write`. So keeping every caller workflow free of
+`contents: write` costs nothing.
+
+[IMPORTANT]
+====
+*The limit of the second finding, stated rather than dropped.* `is_supported` call sites were not
+exhaustively enumerated across the upstream repository, and only the *GitHub* provider was
+inspected. The result therefore does not transfer by proof to GitLab, Bitbucket or Azure DevOps. It
+is a checked fact about the provider this organization runs, not a general one — and both findings
+are pinned to tag `v0.39.0`, not to whatever the floating image tag points at later.
+====
+
 [#skills-injection]
 === `[skills]` would be a strong lever and cannot be enabled as things stand
 
@@ -958,7 +1061,7 @@ Do not "move these into the central config for tidiness". That is precisely the
 [#tool-toggles]
 == Tools
 
-PR-Agent has three automatic tools. Only one is enabled:
+PR-Agent has three automatic tools:
 
 [cols="1,1,3"]
 |===
@@ -974,14 +1077,25 @@ PR-Agent has three automatic tools. Only one is enabled:
 and the machine-readable blocks our automation reads out of them.
 
 |`/improve`
-|no
-|Committable suggestions are already CodeRabbit's job. Enabling it duplicates findings and
-roughly doubles token cost per pull request. Revisit from review-retrospective metrics.
+|per pull request
+|Off by default, on for any pull request labelled `pr-agent-improve`. The label is read by the
+reusable workflow itself, so no adopting repository edits anything to get the gate. Tuned
+centrally in `[pr_code_suggestions]`, including the substantiation bar — see
+<<instruction-packs>> for why duplicating CodeRabbit is no longer the objection it was.
 |===
 
+The old objection to `/improve` — that committable suggestions are already CodeRabbit's job — was
+retired with the per-domain packs. The suggestions now carry *this organization's* domain rules
+rather than a second copy of a generic reviewer's, so the overlap argument no longer holds; and
+<<recall-over-precision>> already settled that overlap costs one duplicate comment while
+suppression costs the finding. What remains true is the cost, which is why the gate is per pull
+request rather than per repository: a reviewer decides, on a pull request they are already reading,
+that inline suggestions are worth paying for on that one.
+
 The three toggles are the one deliberate exception to "everything is configured here": they
-are inputs of the reusable workflow, so a single repository can opt into `/improve` without
-editing the org-wide file.
+are inputs of the reusable workflow, so a single repository can opt into `/improve` unconditionally
+without editing the org-wide file. The `pr-agent-improve` label is the finer-grained version of the
+same escape hatch, and it needs no caller change at all.
 
 On-demand commands (`/review`, `/ask`, `/improve`, `/help`) still work as pull request
 comments in any adopting repository, regardless of the automatic toggles.
@@ -1032,7 +1146,10 @@ Prerequisites, all organization-wide and already in place for adopting repositor
 (and optionally `GCP_VERTEX_LOCATION`, default `global`) — variables, not secrets, because
 none of them is a credential.
 
-Create the `skip-bot-review` label in the repository if it does not exist yet.
+Create the `skip-bot-review` label in the repository if it does not exist yet, and
+`pr-agent-improve` alongside it if inline suggestions are wanted there — a label that does not
+exist cannot be applied, which is the one way the gate in <<tool-toggles>> can appear not to work
+while the workflow is entirely correct.
 
 == See also
 
