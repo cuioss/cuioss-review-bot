@@ -323,3 +323,74 @@ final_update_message = false
 # This does NOT license padding — the charter above forbids reporting an untraced mechanism, and
 # that constraint is the one that must hold if this number is raised again.
 num_max_findings = 12
+
+[pr_code_suggestions]
+# /improve is now reachable automatically, gated per PULL REQUEST by the `pr-agent-improve` label
+# resolved in cuioss/cuioss-organization's reusable-pr-agent-review.yml. A caller's auto-improve
+# input still forces it on for a whole repository. This block exists so that a labelled pull
+# request gets the same deliberate tuning [pr_reviewer] gets, instead of silently falling back to
+# upstream defaults on the one path that writes into the diff.
+#
+# Two things about /improve were ASSUMED for a long time and are now checked against upstream
+# v0.39.0. Both were wrong in the direction that would have wasted the work. Citations and the
+# stated coverage limit: README.adoc "What was actually checked about /improve".
+#
+#   - There is no `pr_reviewer.inline_code_comments`. Inline publishing is not a cheaper switch
+#     on /review that would make this whole block unnecessary — it is a /improve capability,
+#     reached through commitable_code_suggestions below.
+#   - `restricted_mode = true` in [config] does NOT gate /improve. It withholds exactly one
+#     capability, `push_code`, which /improve does not use — so keeping every caller free of
+#     `contents: write` costs nothing here.
+
+# Publish suggestions as inline review comments rather than one collapsed table. This is the key
+# that makes this reviewer's inline shape real, and plan-marshall's automatic-review now records
+# `inline` as participation evidence for this bot on exactly that basis.
+commitable_code_suggestions = true
+
+# Suppress the parts of the output that are UI rather than findings — the same treatment
+# [pr_reviewer] gets above, and for the same reason: a consumer that collects this bot's comments
+# as findings files every one of them as something to triage.
+#
+# The suppression here is NARROWER than [pr_reviewer]'s, and the difference is a real gap rather
+# than an oversight. `enable_intro_text` does NOT exist under [pr_code_suggestions] in the pinned
+# v0.39.0 image — the section declares 23 keys and that is not among them. It is a real key, but
+# scoped to [pr_reviewer], which is exactly why a file-scoped grep for it returns a hit that says
+# nothing about this section. It was set here once, on that mistaken reading, and was inert.
+#
+# No key under [pr_code_suggestions] is a rename of it. `publish_output_no_suggestions` and
+# `persistent_comment` are behavioural neighbours, not drop-in equivalents, so substituting either
+# would replace one unverified claim with another. The /improve preamble is therefore UNSUPPRESSED
+# and that is a known, accepted state — not something a future edit should "fix" by guessing a key.
+#
+# Verify any addition here SECTION-SCOPED, never file-scoped: `enable_help_text` alone appears in
+# nine sections of configuration.toml with differing defaults ([pr_analyze] defaults true).
+enable_help_text = false
+enable_chat_text = false
+
+# One updated comment per pull request, matching persistent_comment in [pr_reviewer].
+persistent_comment = true
+
+# The substantiation bar carried over from the charter, and it is carried over DELIBERATELY: this
+# tool writes suggested code into the diff, so a fabricated mechanism here costs more than it does
+# in a review comment. The findings ceiling is stated in prose rather than as a numeric key so it
+# reaches the model on the one channel that is guaranteed to be read, matching num_max_findings = 12
+# above.
+#
+# Do not add withholding language to this block. The failure this reviewer actually had was
+# silence, not noise — see README.adoc "A charter written against noise produces silence".
+extra_instructions = """
+Prioritise security and correctness over style.
+
+Suggest a change only where you can name the input or state that makes the current code wrong, and
+what goes wrong. A suggestion whose mechanism you have not traced in the code shown is a
+fabrication, not a suggestion. That bar does not move when the diff looks thin.
+
+Report at most 12 suggestions. That is a ceiling, not a target — do not pad toward it.
+
+Severity is not a reporting threshold. A substantiated suggestion is worth making even when it is
+narrow, cheap to fix, or confined to test code, and the reader decides what to act on. Do not
+weigh whether an issue is important enough to mention, and do not withhold one because another
+reviewer might also report it.
+
+Do not suggest stylistic rewrites, renames for taste, or reformatting.
+"""
