@@ -231,12 +231,17 @@ which registers `gemini-2.5-flash`, `gemini-2.5-pro`, and the `gemini-3-*-previe
 `gemini-3.1-*` and `gemini-3.5-*` families under both the `gemini/` and `vertex_ai/` prefixes,
 all at 1M context.
 
-The registry **stops at the 3.5 pair**. Anything newer — `gemini-3.6-flash`, for one — is absent,
-and an unregistered model does not degrade gracefully: `get_max_tokens()` in `algo/utils.py`
-raises unless `config.custom_model_max_tokens` is positive. Check the id against that table
-before configuring it, and pair a newer model with `custom_model_max_tokens`. (An earlier
-revision of this document asserted `gemini-3.6-flash` was registered. It is not; the claim was
-never checked against the table.)
+The registry **stops at the 3.5 pair**. Anything newer is absent, and an unregistered model does
+not degrade gracefully: `get_max_tokens()` in `algo/utils.py` raises unless
+`config.custom_model_max_tokens` is positive. Check the id against that table before configuring
+it, and pair a newer model with `custom_model_max_tokens`. (An earlier revision of this document
+asserted `gemini-3.6-flash` was registered. It is not; the claim was never checked against the
+table.)
+
+That correction is why the current ids were read out of the pinned image rather than assumed:
+**neither `gemini-3.7-flash` nor `gemini-3.6-flash` is registered** — the leader and the first
+fallback are both absent. One `custom_model_max_tokens` line therefore covers two rungs, and
+falling back does not make the ladder safe on its own.
 
 Being registered in `MAX_TOKENS` does **not** mean the project can serve it, and this held on
 both backends:
@@ -269,12 +274,51 @@ One run settled what three console visits had not. Both `404` rungs were then re
 roughly eight wasted calls and a minute per review to re-learn a fixed fact.
 
 The **3.x Pro tier is not available to this project at all**. What the 3 series does offer here is
-`gemini-3.6-flash`, which leads — newest generation, and it avoids the `429` backoff that
-`gemini-2.5-pro` incurs.
+the *flash* line, led by `gemini-3.7-flash`.
 
-The rest of the ladder is ordered *newest generation first*, which is not the intuitive
-"pro outranks flash" ordering. Google's published head-to-head has `3.6-flash` beating
-**3.1 Pro** on every coding and agentic benchmark:
+That leader was **checked against this project before it was promoted**, not inferred from the
+model being generally available — this whole section exists because ids the pinned image itself
+registers still `404`'d here. A direct `generateContent` call to
+`projects/<this project>/locations/global/publishers/google/models/gemini-3.7-flash` answered
+`HTTP 200`, with `"modelVersion": "gemini-3.7-flash"` in the response. The same probe served
+`3.6-flash` and `3.5-flash`, so the head of the ladder is entitlement-checked rather than
+assumed. Do this before promoting the next leader too; it costs one call.
+
+The ladder is ordered *newest generation first*, and that takes two separate arguments — one for
+preferring a newer flash to an older one, one for preferring any flash to pro.
+
+*Newer flash first.* Google's own _Gemini 3.7 Flash model evaluation_ puts 3.7 ahead of 3.6 on
+every coding and agentic benchmark it reports, including the long-context row that governs how
+much of a large diff survives the read:
+
+[cols="2,1,1"]
+|===
+|Benchmark |3.7 Flash |3.6 Flash
+
+|FrontierCode 1.1 Main |43.6% |34.4%
+|DeepSWE v1.1 |65.3% |48.6%
+|Code Arena (Elo) |1588 |1536
+|Terminal-Bench 2.1 |85.8% |78.0%
+|Terminal-Bench 3.0 |14.9% |5.4%
+|GDM-MRCR v2 (8-needle), 128k average |97.0% |91.8%
+|===
+
+It is not a clean sweep, and the exception is recorded rather than dropped: 3.6 keeps CharXiv
+Reasoning both ways (85.2 vs 84.5 without tools, 89.4 vs 88.7 with), which is chart
+comprehension, not this workload.
+
+The promotion is **elective and cost-neutral**. `gemini-3.6-flash` is not deprecated and carries
+no retirement date, and the introductory price of $0.75 / $3.75 per 1M input / output tokens
+covers *both* models through 2026-12-31, after which both move to $1.50 / $7.50. Nothing forced
+this change; it is an upgrade taken on the table above.
+
+So `3.6-flash` is **demoted, not dropped**. It is the first fallback because it is what served
+every review before the promotion: a `404` or a `400` on the new leader costs one wasted call and
+lands on the model that worked yesterday. Leaving it out would have made the first fallback a
+two-generation drop.
+
+*Any flash before pro.* This is not the intuitive "pro outranks flash" ordering. Google's
+published head-to-head has `3.6-flash` beating **3.1 Pro** on every coding and agentic benchmark:
 
 [cols="2,1,1"]
 |===
@@ -287,8 +331,9 @@ The rest of the ladder is ordered *newest generation first*, which is not the in
 |===
 
 Pro retains narrow leads only on pure reasoning (GPQA Diamond 94.3 vs 92.8, Humanity's Last Exam
-44.4 vs 38.3) — not this workload. `gemini-2.5-pro` is a generation older still, so placing it
-ahead of a 3-series flash would have made a fallback a *downgrade*. It now sits at the back.
+44.4 vs 38.3) — not this workload, and flash also avoids the `429` backoff that `gemini-2.5-pro`
+incurs. `gemini-2.5-pro` is a generation older still, so placing it ahead of a 3-series flash
+would have made a fallback a *downgrade*. It sits at the back.
 
 [NOTE]
 ====
@@ -297,8 +342,9 @@ over: it contradicts the benchmarks above, and review depth turned out to be gov
 charter, not the model — see <<charter-suppression>>.
 ====
 
-Do not reinstate a 3.x *pro* id without first confirming the Model Garden card offers it. The
-`404` is ambiguous enough to read as a transient fault rather than a fixed fact.
+Do not reinstate a 3.x *pro* id without first confirming the Model Garden card offers it, the way
+the current leader was confirmed above. The `404` is ambiguous enough to read as a transient fault
+rather than a fixed fact.
 
 The floor of the ladder is what served before it existed, so the worst case is the previous
 behaviour plus a few seconds. Before the gate below existed an unavailable model cost one
@@ -345,11 +391,36 @@ ____
 — and the migration section lists *"remove explicit temperature parameters, especially low
 values"* as an action item when moving off 2.5. Gemini 3's reasoning is tuned for the default.
 
-This was reaching the model, not sitting inert. In the pinned image `pr_reviewer.py:233` passes
-`get_settings().config.temperature` into `chat_completion()`, and `litellm_ai_handler.py` sets
-`kwargs["temperature"]` for every model *not* in `NO_SUPPORT_TEMPERATURE_MODELS` — a list of
-o1/o3/o4, gpt-5-codex and Claude Opus ids with no Gemini entry. Every review this organization
-has run went out at `0.2`.
+This was reaching the model, not sitting inert. In the pinned image `configuration.toml:53`
+defaults `temperature` to `0.2`, `pr_reviewer.py:233` passes `get_settings().config.temperature`
+into `chat_completion()`, and `litellm_ai_handler.py:531-533` sets `kwargs["temperature"]` for
+every model *not* in `NO_SUPPORT_TEMPERATURE_MODELS` — deepseek-reasoner, the o1/o3/o4 family,
+gpt-5.x-codex, gpt-5-mini and claude-opus-4-7, with no Gemini entry. Every review this
+organization ran before that line was added went out at `0.2`.
+
+*Google's two pages now disagree, and the newer one does not reach the older one.* "What's new in
+Gemini 3.7 Flash" lists `temperature`, `top_p`, `top_k` and `candidate_count` among deprecated
+parameters to **remove** on migration. The Gemini 3 developer guide quoted above — which does not
+mention 3.7 anywhere — still says to **keep** `temperature` at `1.0`, and nothing on it marks it
+superseded. A reader arriving from either page has no way to learn that the other exists.
+
+That was settled by asking the endpoint instead of choosing a page. `gemini-3.7-flash` **accepts**
+the parameter: `generateContent` returned `HTTP 200` at `temperature` `1.0` and again at `0.2`,
+and `200` once more with `top_p`, `top_k` and `candidate_count` all set alongside it. The
+parameter is still *range-validated* there — `3.0` and `-1.0` each return `HTTP 400`, "the
+supported range is from 0 (inclusive) to 2.0001 (exclusive)". "Deprecated" on that page therefore
+means advice, not rejection.
+
+That `200` is not a vacuous pass. The same endpoint on the same model *does* reject an unsupported
+`generationConfig` value — `thinkingLevel: MINIMAL` returns `HTTP 400 Thinking level is
+unsupported: THINKING_LEVEL_MINIMAL` — so accepting `temperature` is a real accept and not blanket
+tolerance of anything sent.
+
+So the key stays, at `1.0`. Deleting it would not remove the parameter; it would hand the model
+PR-Agent's own `0.2`, the exact value this line exists to prevent. The only suppression reachable
+from the configuration file, `custom_reasoning_model = true`, also disables system messages for
+the model, so it is not a temperature-only lever and is not worth its collateral. Revisit if a
+future model answers `400` rather than `200`.
 
 *`reasoning_effort` is dead config for Gemini.* An earlier revision of this document asserted it
 is mapped onto Gemini's thinking budget by LiteLLM and special-cased for the 2.5 models. That is
