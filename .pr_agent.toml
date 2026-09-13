@@ -445,3 +445,7 @@ reviewer might also report it.
 
 Do not suggest stylistic rewrites, renames for taste, or reformatting.
 """
+
+# TEMPORARY: deliberate TOML corruption, pushed only to observe the validate-packs
+# check go red. Reverted in the very next commit on this branch.
+this_key_has_no_value =
