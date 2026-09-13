@@ -1,0 +1,97 @@
+name: Validate settings
+
+# The check this repository is gated on. Everything here is published INTO this
+# repository by automation — the packs/ set by cuioss/plan-marshall's publish
+# workflow, and .pr_agent.toml by hand — and both are read at review time by a
+# consumer that cannot tell a corrupted file from a missing one. A parse error in
+# .pr_agent.toml does not fail loudly at review time: PR-Agent falls back to its
+# own defaults, and the org silently reviews every pull request with none of the
+# tuning this repository exists to carry.
+#
+# So this workflow asserts the two properties that make the repository's content
+# usable at all, and nothing else. It deliberately does NOT lint the packs'
+# Markdown or type-check the TOML's keys against PR-Agent's schema: the first is
+# style, and the second would pin this repository to a specific pr-agent version
+# and start failing on an upgrade it has no say in.
+on:
+  pull_request:
+    branches:
+      - main
+
+# Read-only. This workflow inspects a checkout and writes nothing — not to this
+# repository, not to any other.
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    # Named so branch protection can require it by a stable name. Renaming this
+    # job silently un-requires the check: protection matches on the name string,
+    # and a rule naming a check that no longer reports is not enforced, it is
+    # simply never satisfied-or-failed. Change it and update the rule together.
+    name: Validate settings
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A file tree this job only READS. The default `persist-credentials: true`
+          # would write the workflow token into .git/config for the life of the job
+          # to serve a git operation that never happens.
+          persist-credentials: false
+
+      - name: Set up Python 3
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          # tomllib is stdlib from 3.11. Pinning the setup step rather than
+          # trusting the runner image's default python3 keeps the parse check
+          # from depending on an image detail this repository does not control.
+          python-version: '3.x'
+
+      - name: Parse .pr_agent.toml
+        # `tomllib.load` in binary mode is the same parser PR-Agent's own TOML
+        # loading reaches, so a file that passes here is a file that loads there.
+        # The failure is reported with the parser's own message, which carries the
+        # line and column — enough to fix the file without reproducing the run.
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import sys
+          import tomllib
+
+          path = pathlib.Path(".pr_agent.toml")
+          if not path.is_file():
+              print("::error file=.pr_agent.toml::the org-level PR-Agent configuration is missing")
+              sys.exit(1)
+
+          try:
+              with path.open("rb") as handle:
+                  tomllib.load(handle)
+          except tomllib.TOMLDecodeError as error:
+              print(f"::error file=.pr_agent.toml::.pr_agent.toml is not valid TOML: {error}")
+              sys.exit(1)
+
+          print(".pr_agent.toml parses as valid TOML")
+          PY
+
+      - name: Check the published pack set is not empty
+        # Counted the same way the publisher counts what it emits
+        # (cuioss/plan-marshall .github/workflows/pr-agent-packs-publish.yml), so
+        # the gate and the producer agree on what "the published set" means. That
+        # publisher REPLACES packs/ wholesale rather than merging into it, which is
+        # precisely how the directory could arrive empty: one bad derivation
+        # publishes the absence of every pack, and a consumer naming a pack gets
+        # nothing back with no error to read.
+        run: |
+          set -euo pipefail
+          if [ ! -d packs ]; then
+            echo "::error::packs/ does not exist; the published pack set is missing"
+            exit 1
+          fi
+          pack_count=$(find packs -maxdepth 1 -name '*.md' | wc -l)
+          if [ "${pack_count}" -eq 0 ]; then
+            echo "::error::packs/ contains no pack artifacts; the published set is empty"
+            exit 1
+          fi
+          echo "Found ${pack_count} pack artifact(s)"
