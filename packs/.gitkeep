@@ -1,3 +1,0 @@
-TEMPORARY: keeps packs/ present with zero pack artifacts, so the validate check
-exercises its artifact-count branch rather than its directory-missing branch.
-Reverted in the very next commit on this branch.
