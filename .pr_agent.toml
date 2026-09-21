@@ -214,6 +214,13 @@ repo_context_from_default_branch = true
 # important thing to know about this setup.
 # ------------------------------------------------------------------------------------------
 
+# `.plan/` is plan-marshall's own bot-authored orchestration ledger — machine-generated
+# bookkeeping, never source any reviewer's charter is aimed at. This narrows what reaches the
+# model on a mixed diff; a `.plan`-only diff is a whole-job skip handled one layer up, in
+# cuioss/cuioss-organization's reusable-pr-agent-review.yml. See README.adoc "[ignore] — .plan/**".
+[ignore]
+glob = [".plan/**"]
+
 [pr_reviewer]
 # Charter: this is the THIRD reviewer, beside CodeRabbit and Sourcery. It is pointed at the
 # security depth lost when the consumer tier of Gemini Code Assist was retired.

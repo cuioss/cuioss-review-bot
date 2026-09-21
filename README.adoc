@@ -544,6 +544,34 @@ documentation *about* the code but the contract itself — plan-marshall's skill
 workflow files are read by the agent at runtime. A diff hunk in a contract document is not
 reviewable without the rule it sits inside. `.txt` keeps the skip.
 
+[#ignore-plan]
+=== `[ignore]` — `.plan/**`
+
+`.plan/` is plan-marshall's own bot-authored orchestration ledger — status.json, epic markdown,
+staged plan specs, findings, inbox messages. It is machine-generated bookkeeping, never source any
+of the three reviewers' charters are aimed at. Reviewing it spends the same token and quota budget
+real source changes need, for content no reviewer charter judges.
+
+This is *not* the mechanism retired in <<dead-config>> — that section covers *whole-PR* skip logic
+read only by the webhook servers' `should_process_pr_logic()`, dead in GitHub Action mode.
+`[ignore].glob` is a different mechanism entirely: `filter_ignored()`
+(`pr_agent/algo/file_filter.py`) is called from *inside* `GithubProvider.get_diff_files()`
+(`pr_agent/git_providers/github_provider.py`), the same provider class the GitHub Action runner
+instantiates. Confirmed directly against upstream source at
+`The-PR-Agent/pr-agent@1d01f24f455bb879c1d9c557ad7de3d72dcc7975`, not assumed from documentation.
+
+[source,toml]
+----
+[ignore]
+glob = [".plan/**"]
+----
+
+This narrows what PR-Agent reviews on a *mixed* diff — the same "narrows, does not skip" shape as
+<<patch-extension>> above, but here the excluded hunks never reach `get_diff_files()` at all, so
+they are not merely stripped of extra context, they never reach the model. A pull request whose
+*entire* diff is under `.plan/` is a separate, whole-job-skip case, handled one layer up: see
+`cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml`'s `changes` job.
+
 [#repo-context-budget]
 === `repo_context_max_lines` is a shared budget that evicts silently
 
