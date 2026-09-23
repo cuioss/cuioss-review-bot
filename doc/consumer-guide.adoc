@@ -22,23 +22,13 @@ applied first. It cannot be selected, deselected or replaced.
 . *Domain packs* — the packs you list, in the order you list them. Each carries one domain's rules.
 . *Additional rules* — the repository's own rule sentences, appended after the last pack.
 
-Published pack keys — each is the file name under `packs/` without `.md`:
+A pack key is the file name of a pack under
+https://github.com/cuioss/cuioss-review-bot/tree/main/packs[`packs/`] without `.md`; that directory
+is the only list of published keys, and each pack names the domain it covers in its opening paragraph.
+`spine` is not a pack key.
 
-[cols="1,3"]
-|===
-|Key |Domain
-
-|`java` |Java code
-|`javascript` |JavaScript code
-|`python` |Python code
-|`plugin` |plan-marshall marketplace components (skills, scripts, workflow documents)
-|`docs` |Documentation
-|`oci` |Container images and OCI artifacts
-|`reqs` |Requirements documents
-|===
-
-`packs/` is the authoritative list. Read the packs you intend to select before you enable them: a
-pack's rules are reported as findings on every pull request.
+Read the packs you intend to select before you enable them: a pack's rules are reported as findings
+on every pull request.
 
 == Declaring it
 

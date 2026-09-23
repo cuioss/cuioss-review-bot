@@ -69,8 +69,11 @@ charter assembly reads `packs/` under that name as well.
 
 == The review token must read two repositories
 
-PR-Agent skips the global file silently, with no error in the log, when the token it runs under
-cannot read both the repository under review and this repository.
+When the token it runs under cannot read this repository, PR-Agent's lookup of
+`cuioss/pr-agent-settings` answers `403` or `404`, and PR-Agent skips the global file. The skip
+raises no error and no warning; only a debug-level log line records it, so the run otherwise looks
+like any other. The token must therefore be able to read both the repository under review and this
+repository.
 
 The reviewer runs under a token minted from the `cuioss-review-bot` GitHub App.
 `actions/create-github-app-token` scopes a token to the current repository by default, so the
@@ -89,10 +92,13 @@ The App must be installed on this repository; the organization-wide installation
 
 == Verifying that the global file was applied
 
-A failed lookup is silent, so its success is verified by an observable only the global file can
-produce: the reviewer step logs `Generating prediction with vertex_ai/gemini-3.7-flash`. That model
-id is set only by `[config] model` in this repository's `.pr_agent.toml`. Without the global file
-the image's default model has no credential in the workflow, and the fail-closed gate reports the
-job as failed.
+A failed lookup raises no error, so its success is verified by an observable of the resolved
+configuration: the reviewer step logs `Generating prediction with <model>`, where `<model>` is
+the id set by `[config] model` in this repository's `.pr_agent.toml`. Without the global file the
+image's default model has no credential in the workflow, and the fail-closed gate reports the job
+as failed.
 
-The model id in the log line follows `[config] model`; see xref:models.adoc[Models].
+The observable proves the global file only for a repository whose own `.pr_agent.toml` neither sets
+`[config] model` nor sets `use_global_settings_file = false`. A repository-local file can select the
+same model id itself, and the log line then says nothing about the global file. Check the
+repository-local file before reading the log line as evidence.

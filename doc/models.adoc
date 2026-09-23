@@ -24,19 +24,9 @@ the reviewer steps.
 
 == The ladder
 
-[cols="1,3"]
-|===
-|Position |Model
-
-|Leader (`model`)
-|`vertex_ai/gemini-3.7-flash`
-
-|Fallbacks (`fallback_models`), in order
-|`vertex_ai/gemini-3.6-flash`, `vertex_ai/gemini-3.5-flash`, `vertex_ai/gemini-2.5-flash`,
-`vertex_ai/gemini-2.5-pro`
-|===
-
-LiteLLM tries the leader and falls through the list on an error. The fail-closed gate of the
+The ladder is `[config] model` (the leader) followed by `[config] fallback_models` in order, in
+`.pr_agent.toml`; that file is the only place the ids are listed. LiteLLM tries the leader and
+falls through the list on an error. The fail-closed gate of the
 reusable workflow fails the job when every rung fails, so an unavailable model is a loud failure
 rather than a silent run without a review.
 
@@ -48,7 +38,7 @@ much of a large diff survives the read.
 
 *Any 3-series flash before any pro.* `gemini-3.6-flash` leads `gemini-3.1-pro` on every coding and
 agentic benchmark Google publishes for the pair, and flash avoids the `429` throttling `gemini-2.5-pro`
-incurs. `gemini-2.5-pro` is a generation older and sits last.
+incurs. `gemini-2.5-pro` is a generation older than any 3-series flash, so it belongs behind them.
 
 *No 3.x pro id.* The project is not entitled to the 3.x pro tier; those ids answer `404 Publisher
 model … was not found or your project does not have access to it`. That message covers "not
@@ -67,8 +57,8 @@ permits the reviewer to report.
 
 == `custom_model_max_tokens`
 
-Required, not tuning. `gemini-3.7-flash` and `gemini-3.6-flash` are absent from the `MAX_TOKENS`
-registry in `pr_agent/algo/__init__.py` of the pinned image, and `get_max_tokens()` raises for an
+Required, not tuning. The leader and the first fallback are absent from the `MAX_TOKENS` registry
+in `pr_agent/algo/__init__.py` of the pinned image, and `get_max_tokens()` raises for an
 unregistered model unless `custom_model_max_tokens` is positive. The value is the model's input
 window (1048576); `max_model_tokens` still clamps it, because `get_max_tokens()` takes the smaller
 of the two.
@@ -78,8 +68,9 @@ upstream model documentation lists fewer models than the registry; the registry 
 
 == `max_model_tokens`
 
-`256000`. With `large_patch_policy = "clip"` a diff above this limit is truncated before the model
-reads it, and a clipped review is indistinguishable from a complete one at the pull request — see
+`256000`. With `large_patch_policy = "clip"` a diff above this limit can have patch content
+truncated or whole file patches omitted before the model reads it, and the result is
+indistinguishable from a complete review at the pull request — see
 xref:review-limits.adoc#clipped-diff[Clipped diffs]. The value sits above the largest diff observed in
 the organization (168188 tokens) and at a quarter of the 1M window, so one pathological pull
 request cannot produce a pathological bill.
@@ -95,7 +86,7 @@ recommends the default of `1.0` and warns that lower values can cause looping or
 reasoning.
 
 The key stays set. Removing it would not remove the parameter; it would send PR-Agent's `0.2`.
-`gemini-3.7-flash` accepts the parameter within its range of 0 to 2. The only other lever,
+The Gemini 3 flash models accept the parameter within their range of 0 to 2. The only other lever,
 `custom_reasoning_model = true`, also disables system messages for the model.
 
 == `reasoning_effort` is not transmitted

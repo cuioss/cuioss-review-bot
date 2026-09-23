@@ -21,18 +21,18 @@ fallback_models = [
     "vertex_ai/gemini-2.5-pro",
 ]
 
-# Required: gemini-3.7-flash and gemini-3.6-flash are absent from the MAX_TOKENS registry of the
-# pinned image, and get_max_tokens() raises for an unregistered model unless this is positive. The
-# model's input window; max_model_tokens below still clamps it. Remove only when the pinned image
-# registers every unregistered model on the ladder. See doc/models.adoc.
+# Required: the leader and the first fallback are absent from the MAX_TOKENS registry of the pinned
+# image, and get_max_tokens() raises for an unregistered model unless this is positive. The models'
+# input window; max_model_tokens below still clamps it. Remove only when the pinned image registers
+# every model on the ladder. See doc/models.adoc.
 custom_model_max_tokens = 1048576
 
 # Gemini 3 is tuned for temperature 1.0; PR-Agent would otherwise send its default of 0.2.
 # See doc/models.adoc.
 temperature = 1.0
 
-# The largest diff the reviewer reads. Above it, large_patch_policy "clip" truncates the diff
-# before the model sees it, and a review of a clipped diff is inconclusive.
+# The largest diff the reviewer reads. Above it, large_patch_policy "clip" can truncate patch
+# content or omit whole file patches before the model sees them, and the review is inconclusive.
 # See doc/models.adoc and doc/review-limits.adoc.
 max_model_tokens = 256000
 

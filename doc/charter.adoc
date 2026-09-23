@@ -11,9 +11,9 @@ the rules any change to it follows.
 The reviewer is the third automated reviewer in the organization, beside CodeRabbit and Sourcery,
 and it is security- and correctness-weighted: `[pr_reviewer] require_security_review = true`, a
 charter naming the defect classes the organization ships, and the output that is not a finding
-(effort estimate, review labels, ticket analysis, help text) switched off. `repo_context_files`
-feeds it each repository's `CLAUDE.md` and `AGENTS.md`, so it reviews against documented project
-rules.
+(effort estimate, review labels, ticket analysis, help text) switched off. `[config]
+repo_context_files` feeds it each repository's instruction documents, so it reviews against
+documented project rules.
 
 == Spine and packs
 

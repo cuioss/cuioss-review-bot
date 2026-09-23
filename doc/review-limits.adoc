@@ -9,10 +9,11 @@ those limits in mind. Each section states the rule a reader of a review applies.
 [#clipped-diff]
 == A clipped diff is inconclusive
 
-With `large_patch_policy = "clip"`, a diff above `max_model_tokens` is truncated before the model
-reads it. A truncated diff is indistinguishable from a complete one inside the model, so clipping
-does not merely lower coverage: it produces confident findings that the removed lines refute, and
-clean results that the removed lines would have contradicted.
+With `large_patch_policy = "clip"`, a diff above `max_model_tokens` can have patch content
+truncated or whole file patches omitted before the model reads it. Inside the model, truncated
+content and omitted files are indistinguishable from complete coverage, so clipping does not
+merely lower coverage: it produces confident findings that the removed lines refute, and clean
+results that the removed lines would have contradicted.
 
 *Rule.* Read the reviewer step log before the verdict. A run that logs `total tokens over limit` is
 inconclusive in both directions — neither a clearance nor a finding. Raising `max_model_tokens`
@@ -49,8 +50,9 @@ Markdown is also not filtered elsewhere: `md` and `txt` appear in `bad_extension
 [#repo-context-budget]
 == `repo_context_max_lines` is one shared budget
 
-`repo_context_files = ["CLAUDE.md", "AGENTS.md"]`, read from the default branch. The files share one
-budget of `repo_context_max_lines` (default `500`), consumed in order. The file that crosses the
+The files named by `[config] repo_context_files` in `.pr_agent.toml` are read from the default
+branch. They share one budget of `repo_context_max_lines` (default `500`), consumed in the listed
+order. The file that crosses the
 budget is truncated with a `...(truncated)...` marker; every file after it is dropped with no
 marker.
 
@@ -115,7 +117,9 @@ defect.
 [#skills]
 == `[skills]` is not enabled
 
-The `[skills]` section scans filesystem paths for `SKILL.md` files. The reviewer job performs no
-checkout, and a checkout in that job would be of the pull request head, which would let a pull
-request add instructions the reviewer reads as organization standards. It stays off unless the
-loader gains a default-branch reference or a checkout can be pinned to the base branch.
+The `[skills]` section scans configured filesystem paths for `SKILL.md` files and inlines them into
+the review prompt. The reviewer job checks out only the organization's pinned review scripts from
+`cuioss/cuioss-organization`; it never checks out the repository under review. A path that pointed
+at a checkout of the pull request head would let a pull request add instructions the reviewer reads
+as organization standards. `[skills]` stays unset; enabling it needs a path to trusted, pinned
+content, never to pull request content.
