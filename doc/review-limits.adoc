@@ -1,0 +1,125 @@
+= Review limits
+:toc: left
+:toclevels: 2
+:icons: font
+
+What this reviewer cannot see, where its input is silently cut, and how to read a review with
+those limits in mind. Each section states the rule a reader of a review applies.
+
+[#clipped-diff]
+== A clipped diff is inconclusive
+
+With `large_patch_policy = "clip"`, a diff above `max_model_tokens` can have patch content
+truncated or whole file patches omitted before the model reads it. Inside the model, truncated
+content and omitted files are indistinguishable from complete coverage, so clipping does not
+merely lower coverage: it produces confident findings that the removed lines refute, and clean
+results that the removed lines would have contradicted.
+
+*Rule.* Read the reviewer step log before the verdict. A run that logs `total tokens over limit` is
+inconclusive in both directions — neither a clearance nor a finding. Raising `max_model_tokens`
+makes clipping rarer; it does not make a clipped review detectable, and that log line is the only
+signal.
+
+[#description-channel]
+== The pull request description is the only route for stated intent
+
+The reviewer judges code against generic correctness and the organization's documented rules; it
+knows what a change was meant to do only from the pull request description, which
+`pr_reviewer_prompts.toml` places in the `--PR Info--` block.
+
+* `max_description_tokens = 2000`. The upstream default of `500` clips the description with
+`clip_tokens()` before it reaches the prompt, with no marker and no log line.
+* `repo_context_files` is not an alternative. It reads from the default branch, so a document on
+the pull request branch is invisible, and reading from the head would let pull request content
+rewrite the reviewer's instructions.
+
+The charter admits stated intent only as a claim to be checked — see xref:charter.adoc[Charter].
+
+[#patch-extension]
+== `patch_extension_skip_types` does not exclude files
+
+`extend_patch()` returns the patch unchanged for a matching file: the hunks still reach the model.
+Only the extension is skipped — the `patch_extra_lines_before` / `patch_extra_lines_after` source
+lines spliced around each hunk. The value is `[".txt"]`. `.md` is not in it, because in this
+organization markdown is often an executable contract (plan-marshall's skills, standards and
+workflow documents), and a hunk in a contract document needs the rule around it.
+
+Markdown is also not filtered elsewhere: `md` and `txt` appear in `bad_extensions` only under
+`extra`, which applies when `use_extra_bad_extensions` is true, and it is not.
+
+[#repo-context-budget]
+== `repo_context_max_lines` is one shared budget
+
+The files named by `[config] repo_context_files` in `.pr_agent.toml` are read from the default
+branch. They share one budget of `repo_context_max_lines` (default `500`), consumed in the listed
+order. The file that crosses the
+budget is truncated with a `...(truncated)...` marker; every file after it is dropped with no
+marker.
+
+*Rule.* If a repository's documented rules stop being honoured, count the lines of its context
+files before suspecting the model. Adding a third context file or growing a `CLAUDE.md` both spend
+the same budget.
+
+[#agents-file-case]
+== Context file names are case-sensitive
+
+The context files are fetched through the case-sensitive contents API. A repository tracking
+`agents.md` instead of `AGENTS.md` delivers nothing from that file, silently. Rename with `git mv`
+(a plain `mv` is a no-op on a case-insensitive filesystem) and check the index with
+`git ls-files AGENTS.md agents.md`.
+
+[#diff-only-ceiling]
+== The reviewer reads the diff, not the codebase
+
+`repo_context_files` is a fixed list of instruction documents, not a code index. No setting gives
+this reviewer the dependency graph around a change, so its findings are strongest where the defect
+is local to the diff.
+
+The sharpest form of the ceiling is a claim contradicted by a file the diff does not touch. When a
+change asserts that something is now skipped, guarded, validated or enforced, and the mechanism
+lives in an untouched file, every statement in the diff agrees with every other, and nothing in the
+reviewer's input shows the defect. A clean review carries no information on that class of claim,
+and two reviewers sharing the blind spot agree without adding any.
+
+*Rule.* Confirm an asserted mechanism in the file that would have to implement it.
+
+Do not add such files to `repo_context_files`: the list applies to every repository this
+configuration governs and spends the shared budget above.
+
+[#availability]
+== Coverage is the number of reviewers that read the diff
+
+A refusal is posted by the reviewer identity, in the same place and at the same point in the flow
+as a review. Review quotas are account-wide, so the pull request that goes unreviewed is often not
+the one that spent the quota.
+
+*Rule.* Before treating a pull request as reviewed, read each reviewer's comment body and confirm
+it is a review rather than a refusal. Neither the number of configured reviewers, the number of
+comments, nor a green check is coverage.
+
+This reviewer has no per-account quota and does not refuse a large diff; it clips instead. A
+refusal is a truthful report of non-coverage, a clipped review is not — see <<clipped-diff>>.
+
+[#no-self-report]
+== The reviewer cannot report its own failure
+
+PR-Agent's GitHub Action runner exits 0 when every model call failed. The reusable workflow's
+fail-closed gate is what turns that into a failed job — see
+xref:workflow-integration.adoc#fail-closed-gate[Fail-closed gate].
+
+[#finding-count]
+== A finding count is not recall
+
+Compare what a reviewer substantiated, never how much it said. A reviewer that posts nothing can be
+right where another's findings are withdrawn on their merits, and a single finding can be the live
+defect.
+
+[#skills]
+== `[skills]` is not enabled
+
+The `[skills]` section scans configured filesystem paths for `SKILL.md` files and inlines them into
+the review prompt. The reviewer job checks out only the organization's pinned review scripts from
+`cuioss/cuioss-organization`; it never checks out the repository under review. A path that pointed
+at a checkout of the pull request head would let a pull request add instructions the reviewer reads
+as organization standards. `[skills]` stays unset; enabling it needs a path to trusted, pinned
+content, never to pull request content.

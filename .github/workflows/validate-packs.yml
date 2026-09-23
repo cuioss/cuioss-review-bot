@@ -76,9 +76,9 @@ jobs:
           PY
 
       - name: Check the published pack set is not empty
-        # Counted the same way the publisher counts what it emits
-        # (cuioss/plan-marshall .github/workflows/pr-agent-packs-publish.yml), so
-        # the gate and the producer agree on what "the published set" means. That
+        # Counted the same way the publisher counts what it emits (the packs
+        # publish workflow in cuioss/plan-marshall), so the gate and the producer
+        # agree on what "the published set" means. That
         # publisher REPLACES packs/ wholesale rather than merging into it, which is
         # precisely how the directory could arrive empty: one bad derivation
         # publishes the absence of every pack, and a consumer naming a pack gets

@@ -1,0 +1,97 @@
+= Models
+:toc: left
+:toclevels: 2
+:icons: font
+
+Which Gemini models the reviewer uses, how the ladder is ordered, and the model parameters that
+apply. The values live in `[config]` of `.pr_agent.toml`.
+
+== Vertex AI, keyless
+
+The reviewer reaches Gemini through Vertex AI (`vertex_ai/…` model ids), not AI Studio
+(`gemini/…`):
+
+* Vertex AI draws on the GCP credits of the organization's project.
+* It is reached through Workload Identity Federation, so no Google credential is stored in GitHub.
+
+The Vertex AI project and location are not in `.pr_agent.toml`. The reusable workflow passes them
+from the organization variables `GCP_PROJECT_ID` and `GCP_VERTEX_LOCATION` (default `global`),
+which keeps the project id out of this public repository.
+
+There is no AI Studio route. No Gemini API key is passed to the reviewer, so a `gemini/…` model id
+fails at the model call. Adding that route needs both an organization secret and an `env:` line on
+the reviewer steps.
+
+== The ladder
+
+The ladder is `[config] model` (the leader) followed by `[config] fallback_models` in order, in
+`.pr_agent.toml`; that file is the only place the ids are listed. LiteLLM tries the leader and
+falls through the list on an error. The fail-closed gate of the
+reusable workflow fails the job when every rung fails, so an unavailable model is a loud failure
+rather than a silent run without a review.
+
+== Selection rules
+
+*Newest flash generation first.* On Google's published coding and agentic benchmarks each newer
+flash generation leads the previous one, including the long-context retrieval row that governs how
+much of a large diff survives the read.
+
+*Any 3-series flash before any pro.* `gemini-3.6-flash` leads `gemini-3.1-pro` on every coding and
+agentic benchmark Google publishes for the pair, and flash avoids the `429` throttling `gemini-2.5-pro`
+incurs. `gemini-2.5-pro` is a generation older than any 3-series flash, so it belongs behind them.
+
+*No 3.x pro id.* The project is not entitled to the 3.x pro tier; those ids answer `404 Publisher
+model … was not found or your project does not have access to it`. That message covers "not
+entitled", "not offered in this region" and "wrong id" alike, so it is not a transient fault to
+retry.
+
+*Check entitlement before promoting a leader.* An id the pinned image registers can still `404` for
+this project. Before a model becomes the leader, call `generateContent` on
+`projects/<project>/locations/global/publishers/google/models/<model>` and confirm `HTTP 200` with
+the expected `modelVersion`. The previous leader stays as the first fallback, so a failing leader
+costs one wasted call and lands on the model that served before.
+
+*Review depth is not a model setting.* Thin reviews are governed by the charter, not the model —
+see xref:charter.adoc[Charter]. Promoting to a stronger model does not change what the charter
+permits the reviewer to report.
+
+== `custom_model_max_tokens`
+
+Required, not tuning. The leader and the first fallback are absent from the `MAX_TOKENS` registry
+in `pr_agent/algo/__init__.py` of the pinned image, and `get_max_tokens()` raises for an
+unregistered model unless `custom_model_max_tokens` is positive. The value is the model's input
+window (1048576); `max_model_tokens` still clamps it, because `get_max_tokens()` takes the smaller
+of the two.
+
+Remove the key only when the pinned image registers every unregistered model on the ladder. The
+upstream model documentation lists fewer models than the registry; the registry is authoritative.
+
+== `max_model_tokens`
+
+`256000`. With `large_patch_policy = "clip"` a diff above this limit can have patch content
+truncated or whole file patches omitted before the model reads it, and the result is
+indistinguishable from a complete review at the pull request — see
+xref:review-limits.adoc#clipped-diff[Clipped diffs]. The value sits above the largest diff observed in
+the organization (168188 tokens) and at a quarter of the 1M window, so one pathological pull
+request cannot produce a pathological bill.
+
+Raising the limit together with a larger-context model is part of the same change: a larger model
+behind the upstream default of `32000` still receives a truncated diff.
+
+== `temperature`
+
+`1.0`. PR-Agent defaults `config.temperature` to `0.2` and passes it to every model that is not on
+its `NO_SUPPORT_TEMPERATURE_MODELS` list, which has no Gemini entry. Google's Gemini 3 guidance
+recommends the default of `1.0` and warns that lower values can cause looping or degraded
+reasoning.
+
+The key stays set. Removing it would not remove the parameter; it would send PR-Agent's `0.2`.
+The Gemini 3 flash models accept the parameter within their range of 0 to 2. The only other lever,
+`custom_reasoning_model = true`, also disables system messages for the model.
+
+== `reasoning_effort` is not transmitted
+
+`litellm_ai_handler.py` adds `reasoning_effort` only for the models in
+`SUPPORT_REASONING_EFFORT_MODELS` (the `o3` and `o4-mini` families). Gemini's thinking level cannot
+be set through PR-Agent in the pinned version. A `reasoning_effort` value in the resolved-config
+dump of a run is not evidence that it reached the model.

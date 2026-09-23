@@ -1,0 +1,104 @@
+= Configuration precedence
+:toc: left
+:toclevels: 2
+:icons: font
+
+How PR-Agent resolves its configuration for a cuioss review, how it finds this repository, and
+which settings live outside `.pr_agent.toml` on purpose.
+
+== Resolution order
+
+Lowest to highest priority:
+
+. Built-in defaults of the pinned PR-Agent image.
+. `extra_config_url` (unused).
+. *This repository's* `.pr_agent.toml` — the organization-level global file.
+. A repository-local `.pr_agent.toml` in the repository under review.
+. A repository wiki `.pr_agent.toml` page.
+. Environment variables on the reviewer step.
+
+Two properties of this order are relied on:
+
+* *Merge, not override.* The global file is merged beneath a repository-local file. A repository
+that sets one key keeps every other key from here.
+* *No cache lag.* The reviewer runs as a GitHub Action, a short-lived process that fetches the
+global file once per run, so a change here is live on the next review.
+
+A repository can opt out of this file with `use_global_settings_file = false` in its own
+`.pr_agent.toml`.
+
+== Environment variables outrank this file
+
+The reusable workflow sets environment variables on the reviewer step for four things only,
+because anything set there silently overrides this file:
+
+* the review token and the Vertex AI credentials path;
+* the Vertex AI project and location, which are deployment identity rather than review tuning and
+are carried as organization variables so the project id stays out of this public repository;
+* the three tool toggles (`auto_review`, `auto_describe`, `auto_improve`), which are caller inputs
+so a single repository can change them without editing this file;
+* `PR_REVIEWER.EXTRA_INSTRUCTIONS`, only on the assembled reviewer step, carrying the charter a
+repository selects for itself — see xref:workflow-integration.adoc#charter-assembly[Charter
+assembly].
+
+Model and review tuning are never set in a workflow `env:` block. Upstream examples set
+`config.model` there; doing that in a caller would decentralize the most important setting.
+
+[#pr-agent-lookup]
+== How PR-Agent finds this repository
+
+PR-Agent looks up the organization settings in a repository named exactly `pr-agent-settings`.
+The name is hard-coded in its discovery: `GithubProvider` requests `cuioss/pr-agent-settings` and
+then reads `.pr_agent.toml` from the root of the returned repository's default branch.
+
+This repository is `cuioss/cuioss-review-bot`. The lookup reaches it through GitHub's repository
+rename redirect: the API answers the old name with a redirect to the new one, and the PyGithub
+client in the pinned image follows a same-host redirect.
+
+[WARNING]
+====
+Never create a repository named `pr-agent-settings` in the cuioss organization. A repository of
+that name breaks the redirect and captures PR-Agent's lookup, and every review then runs against
+whatever that repository contains.
+====
+
+The redirect covers PR-Agent's own lookup only. A GitHub App installation token resolves
+repository names without the redirect, so a token requested for `pr-agent-settings` fails to mint.
+Every token that must read or write this repository therefore names `cuioss-review-bot`, and the
+charter assembly reads `packs/` under that name as well.
+
+== The review token must read two repositories
+
+When the token it runs under cannot read this repository, PR-Agent's lookup of
+`cuioss/pr-agent-settings` answers `403` or `404`, and PR-Agent skips the global file. The skip
+raises no error and no warning; only a debug-level log line records it, so the run otherwise looks
+like any other. The token must therefore be able to read both the repository under review and this
+repository.
+
+The reviewer runs under a token minted from the `cuioss-review-bot` GitHub App.
+`actions/create-github-app-token` scopes a token to the current repository by default, so the
+reusable workflow requests both explicitly:
+
+[source,yaml]
+----
+with:
+  app-id: ${{ secrets.REVIEW_APP_ID }}
+  private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
+  repositories: ${{ github.event.repository.name }},cuioss-review-bot
+  owner: cuioss
+----
+
+The App must be installed on this repository; the organization-wide installation covers it.
+
+== Verifying that the global file was applied
+
+A failed lookup raises no error, so its success is verified by an observable of the resolved
+configuration: the reviewer step logs `Generating prediction with <model>`, where `<model>` is
+the id set by `[config] model` in this repository's `.pr_agent.toml`. Without the global file the
+image's default model has no credential in the workflow, and the fail-closed gate reports the job
+as failed.
+
+The observable proves the global file only for a repository whose own `.pr_agent.toml` neither sets
+`[config] model` nor sets `use_global_settings_file = false`. A repository-local file can select the
+same model id itself, and the log line then says nothing about the global file. Check the
+repository-local file before reading the log line as evidence.
