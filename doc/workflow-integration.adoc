@@ -1,0 +1,172 @@
+= Workflow integration
+:toc: left
+:toclevels: 2
+:icons: font
+
+What the organization's reusable workflow
+https://github.com/cuioss/cuioss-organization/blob/main/.github/workflows/reusable-cuioss-review-bot.yml[`reusable-cuioss-review-bot.yml`]
+does around PR-Agent, and why each part lives there rather than in `.pr_agent.toml`.
+
+== Skip rules
+
+[cols="2,3"]
+|===
+|Rule |Reason
+
+|Skip `dependabot[bot]` pull requests
+|Dependency bumps are gated by CI and auto-merge.
+
+|Skip `cuioss-release-bot[bot]` pull requests
+|Consumer propagation and workflow-reference bumps.
+
+|Skip any pull request labelled `skip-bot-review`
+|The shared organization-wide opt-out label.
+
+|Skip fork pull requests
+|Secrets are unavailable to them, so the token step could only fail.
+|===
+
+The rules are job-level `if:` guards in the reusable workflow. PR-Agent's own `ignore_pr_labels`,
+`ignore_pr_authors`, `ignore_pr_title`, `ignore_pr_source_branches` and `ignore_pr_target_branches`
+are read only by `should_process_pr_logic()` in its webhook servers; the GitHub Action runner never
+calls it. Setting them in `.pr_agent.toml` would parse, appear in the resolved configuration, and
+review every pull request anyway. A guarded-out pull request consumes no runner minutes and no
+tokens.
+
+The guard is evaluated when a review is triggered: on `opened`, `reopened` and `ready_for_review`.
+Apply `skip-bot-review` at creation time or before marking a draft ready; a label added after a
+review was posted does not retract it.
+
+A `/review`, `/improve`, `/describe`, `/ask` or `/help` comment from an owner, member or collaborator
+runs regardless of the label, because someone asked on purpose. Bot senders are excluded, so the
+reviewer cannot trigger itself off its own comment.
+
+== `.plan/**` is not reviewed
+
+`.plan/` holds plan-marshall's machine-generated orchestration records. Two mechanisms keep it out
+of reviews:
+
+* The workflow's `changes` job skips the whole review when every changed file is under `.plan/`.
+* `[ignore] glob = [".plan/**"]` in `.pr_agent.toml` removes `.plan/` files from a mixed diff.
+`filter_ignored()` is called inside `GithubProvider.get_diff_files()`, so the filtered hunks never
+reach the model. This is a different code path from the dead `ignore_pr_*` keys above.
+
+== Image pinned by digest
+
+PR-Agent's action is a Docker action whose Dockerfile is `FROM pragent/pr-agent:github_action`, a
+floating tag. Pinning the action by commit would pin the wrapper while the executed code moves. The
+reviewer steps therefore use the image digest directly:
+
+[source,yaml]
+----
+uses: docker://pragent/pr-agent@sha256:<digest>
+----
+
+The `docker://` form does not accept the action's `artifact_path` / `artifact_instructions` inputs;
+they map to the `ARTIFACT_PATH` / `ARTIFACT_INSTRUCTIONS` environment variables if ever needed.
+Digest bumps are a deliberate, reviewed change to the reusable workflow.
+
+== Reviewer identity
+
+The reviewer posts as the `cuioss-review-bot` GitHub App, not as `github-actions[bot]`. Downstream
+review ingestion, including plan-marshall's `automatic-review`, attributes findings by author login,
+so a shared identity would file unrelated workflow comments as review findings.
+`cuioss-release-bot` is not reused because it is on the skip list: sharing it would entangle who
+authored a pull request with who reviewed it.
+
+App permissions: pull requests read/write, issues read/write, contents read-only, metadata
+read-only. The reviewer never pushes, and `[config] restricted_mode = true` withholds only the
+`push_code` capability, which neither `/review` nor `/improve` uses.
+
+== Vertex AI credentials across the container boundary
+
+`google-github-actions/auth` exchanges the job's OIDC token for short-lived credentials of the
+reviewer service account. Two boundaries are crossed by hand, and getting either wrong produces an
+authentication failure inside the reviewer that shows no review and no obvious error:
+
+* *Path.* The auth action writes its credentials file into `$GITHUB_WORKSPACE` and reports a host
+path. The reviewer container mounts the workspace at `/github/workspace`, so the workflow passes
+`/github/workspace/<basename>`.
+* *Environment.* A Docker action receives only the variables named in its own `env:` block, so
+`GOOGLE_APPLICATION_CREDENTIALS` is restated on each reviewer step.
+
+[#charter-assembly]
+== Charter assembly
+
+The reviewer runs one of two mutually exclusive steps:
+
+* *central charter* — no `PR_REVIEWER.EXTRA_INSTRUCTIONS` in its environment, so the charter in
+`[pr_reviewer] extra_instructions` of `.pr_agent.toml` applies;
+* *assembled charter* — the same step plus `PR_REVIEWER.EXTRA_INSTRUCTIONS` carrying a charter
+composed for the repository under review.
+
+Before either runs, the workflow reads the repository's `.github/project.yml` from its *default
+branch* through the contents API, never from the pull request head, so an author cannot change the
+rules that review their own change. Only a `cuioss-review-bot:` block with `enabled: true` selects
+the assembled step. The charter is then composed in a fixed order: `packs/spine.md`, each pack the
+block lists under `packs:` in the listed order, then the block's `additional_rules`. Every other
+state keeps the central charter.
+
+A declaration that cannot be honoured fails the job with an `::error::` naming the cause, before
+either reviewer step runs: an unreadable file, malformed YAML, an unknown key, a non-boolean
+`enabled`, an unknown or unfetchable pack, `spine` listed under `packs:`, an empty composition, a
+duplicated key, or a legacy top-level `pr-agent:` block.
+
+The composed charter is echoed into the run log as an `Assembled review charter` group naming the
+spine, the packs in order and the number of additional rules. On the central path the log names the
+central charter and the declaration state that selected it.
+
+Two steps exist because GitHub Actions cannot drop an `env:` key conditionally, and an empty
+`PR_REVIEWER.EXTRA_INSTRUCTIONS` would replace the central charter with nothing.
+
+The consumer side of the declaration is described in xref:consumer-guide.adoc[Consumer guide].
+
+[#fail-closed-gate]
+== Fail-closed gate
+
+PR-Agent's GitHub Action runner catches its own exceptions and exits 0, so a run whose every model
+call failed reports success. The workflow ends with a gate whose oracle is the reviewer step's
+structured `review` output: `pr_reviewer.py` writes it from `_prepare_pr_review()` before the
+publish decision, so it exists whenever the model produced a review and is absent whenever every
+model call failed. The gate reads whichever reviewer step ran.
+
+The gate covers pull request runs on the reviewed actions and `/review` comments. It is not
+extended to `/improve`, which writes a separate `improve` output. A published comment is not used
+as the oracle: a clean review may publish nothing depending on configuration, and the persistent
+review comment is updated in place, so a stale one would satisfy an existence check.
+
+== A clean review is published
+
+`[pr_reviewer] publish_output_no_suggestions = true`, so the reviewer comments even when it found
+nothing. Without it a clean review and a total failure look the same at the pull request, and a
+consumer that counts the reviewer's comments as participation cannot see a reviewer that agreed.
+
+`final_update_message = false` keeps that to one comment: the upstream default posts a second
+"Persistent review updated to latest commit" comment on every refresh, which carries no review
+content and would be filed as a finding by comment-collecting consumers.
+
+== Tools
+
+[cols="1,1,3"]
+|===
+|Tool |Automatic |Configuration
+
+|`/review`
+|yes
+|Caller input `auto-review`, default `true`.
+
+|`/describe`
+|no
+|Caller input `auto-describe`, default `false`. It rewrites the pull request description, which
+collides with generated pull request bodies and the machine-readable blocks automation reads from
+them.
+
+|`/improve`
+|per pull request, or per repository
+|Runs on a pull request labelled `cuioss-review-bot-improve`, or on every pull request when the
+caller sets `auto-improve: true`. Tuned in `[pr_code_suggestions]` of `.pr_agent.toml`.
+|===
+
+The three toggles are the deliberate exception to central configuration: they are caller inputs, so
+a repository changes them without editing this repository. On-demand commands work as pull request
+comments in every adopting repository regardless of the toggles.

@@ -1,0 +1,116 @@
+= Consumer guide: selecting a review charter
+:toc: left
+:toclevels: 2
+:icons: font
+
+How a repository owner opts a cuioss repository in to a review charter assembled from its own
+declaration, and how to check that it took effect.
+
+== Before you start
+
+The repository must already be reviewed by cuioss-review-bot: a caller workflow calls
+`cuioss/cuioss-organization/.github/workflows/reusable-cuioss-review-bot.yml` at org release
+`v0.30.0` or later. Without an opt-in, that reviewer applies the central charter from this
+repository's `.pr_agent.toml`, and nothing on this page is required to keep it working.
+
+== What you select
+
+The assembled charter has three parts, always in this order:
+
+. *The spine* — `packs/spine.md`, the cross-cutting security and correctness charter. It is always
+applied first. It cannot be selected, deselected or replaced.
+. *Domain packs* — the packs you list, in the order you list them. Each carries one domain's rules.
+. *Additional rules* — the repository's own rule sentences, appended after the last pack.
+
+Published pack keys — each is the file name under `packs/` without `.md`:
+
+[cols="1,3"]
+|===
+|Key |Domain
+
+|`java` |Java code
+|`javascript` |JavaScript code
+|`python` |Python code
+|`plugin` |plan-marshall marketplace components (skills, scripts, workflow documents)
+|`docs` |Documentation
+|`oci` |Container images and OCI artifacts
+|`reqs` |Requirements documents
+|===
+
+`packs/` is the authoritative list. Read the packs you intend to select before you enable them: a
+pack's rules are reported as findings on every pull request.
+
+== Declaring it
+
+Add the block to `.github/project.yml` on the repository's *default branch*:
+
+[source,yaml]
+----
+cuioss-review-bot:
+  enabled: true
+  packs:
+    - python
+    - plugin
+  additional_rules: []
+----
+
+* `enabled` — only `true` assembles. Keep it a boolean.
+* `packs` — a list of pack keys. Never list `spine`.
+* `additional_rules` — a list of strings, each one rule sentence naming the mechanism a diff breaks.
+The rules are appended after the packs; they cannot remove, replace or precede the spine. Leave the
+list empty when the packs cover the repository.
+
+Land the change through its own reviewed pull request. The reviewer reads the declaration from the
+default branch, never from the pull request under review, so the pull request that adds the block
+is still reviewed with the charter in force before it, and the new charter applies from the first
+pull request reviewed after it merges.
+
+== The four states of `enabled`
+
+[cols="2,3"]
+|===
+|Declaration |Charter the review uses
+
+|No `cuioss-review-bot:` block, or no `.github/project.yml`
+|The central charter.
+
+|The block without `enabled`
+|The central charter. Absence is never consent.
+
+|`enabled: false`
+|The central charter.
+
+|`enabled: true`
+|The spine, then each listed pack, then `additional_rules`.
+|===
+
+Disabled always means the central charter, never no charter.
+
+== What fails the review
+
+The review job fails, with an error naming the cause, instead of falling back to the central
+charter, when the declaration cannot be honoured:
+
+* `cuioss-review-bot:` is not a mapping, or carries a key other than `enabled`, `packs` and
+`additional_rules`;
+* `enabled` is not a boolean;
+* `packs` or `additional_rules` is not a list of strings;
+* a pack key does not exist under `packs/`, cannot be fetched, or is `spine`;
+* the composed charter is empty;
+* `.github/project.yml` is not valid YAML or repeats a mapping key;
+* the file carries a top-level `pr-agent:` block, whatever it declares.
+
+A legacy `pr-agent:` block is the retired name of this block. Rename the key to
+`cuioss-review-bot:`; everything under it keeps its meaning.
+
+== Checking that it took effect
+
+Open the reviewer job of a pull request reviewed after the declaration landed, and expand the
+`Assembled review charter` group of the declaration step. Its title names the spine, the packs in
+order and the number of additional rules, and its body is the exact text the reviewer received. On
+the central path the log instead names the central charter and the declaration state that selected
+it.
+
+The job's schema and every failure path are specified in
+https://github.com/cuioss/cuioss-organization/blob/main/docs/project-yml-schema.adoc[`project-yml-schema.adoc`];
+the workflow side is described in xref:workflow-integration.adoc#charter-assembly[Charter assembly].

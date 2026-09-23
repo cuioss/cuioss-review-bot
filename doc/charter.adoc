@@ -1,0 +1,98 @@
+= Charter
+:toc: left
+:toclevels: 2
+:icons: font
+
+What the reviewer is told to look for, how the charter is split into a spine and domain packs, and
+the rules any change to it follows.
+
+== Purpose
+
+The reviewer is the third automated reviewer in the organization, beside CodeRabbit and Sourcery,
+and it is security- and correctness-weighted: `[pr_reviewer] require_security_review = true`, a
+charter naming the defect classes the organization ships, and the output that is not a finding
+(effort estimate, review labels, ticket analysis, help text) switched off. `repo_context_files`
+feeds it each repository's `CLAUDE.md` and `AGENTS.md`, so it reviews against documented project
+rules.
+
+== Spine and packs
+
+The charter has two parts:
+
+* *The spine* — the cross-cutting categories and reporting rules that apply to every codebase. It
+is `[pr_reviewer] extra_instructions` in `.pr_agent.toml` (the central charter) and
+`packs/spine.md` (the first part of every assembled charter).
+* *Domain packs* — `packs/{key}.md`, each carrying one domain's own rules: the organization's
+standards for that language or artifact type, each naming the mechanism a diff breaks.
+
+A repository that opts in receives the spine, then the packs it selects in the order it lists them,
+then its own `additional_rules`. The spine cannot be selected, deselected or preceded; see
+xref:consumer-guide.adoc[Consumer guide] for the declaration and
+xref:workflow-integration.adoc#charter-assembly[Charter assembly] for how the workflow composes it.
+
+`packs/` is generated, never hand-written. It is derived from the `cuioss/plan-marshall`
+marketplace, which holds the same bundle sources that define the organization's standards, and
+published into this repository by a pull request from that repository. A publish replaces
+`packs/` as a whole. The `Validate settings` check fails a pull request here that would leave
+`packs/` missing or empty, or `.pr_agent.toml` unparseable.
+
+== Content rules
+
+*Say what to look for, never what to stay quiet about.* Every clause that narrows scope or raises a
+confidence bar is a suppressor, and suppressors compose with a base prompt that is already
+conservative. The charter names categories and asks for every substantiated issue in them. It
+carries no "do not duplicate other reviewers" clause: overlap costs one duplicate comment,
+suppression costs the finding, and the model cannot know what the other reviewers reported.
+
+*Severity is not a reporting threshold.* A substantiated finding is reported even when it is narrow,
+cheap to fix, or confined to test code.
+
+*The substantiation bar does not move.* A finding names the input or state that triggers it and what
+goes wrong; a mechanism the reviewer has not traced in the code shown is never reported, and the
+list is never padded. Loosen the severity bar, never this one: pressure to report more is what
+produces invented mechanisms.
+
+*Stated intent is a claim to check.* If the pull request description states what the change is
+meant to do, the reviewer reports where the implementation diverges and never treats agreement as
+evidence of correctness. The clause is conditional, so it is inert when a description states no
+intent.
+
+*Contest the empty-list permission, not the category list.* "No major issues detected" is the text
+rendered when `key_issues_to_review` is empty; there is no severity filter behind it. The field's
+description in the pinned image grants permission to return an empty list, and
+`extra_instructions` is appended as a separate block that argues alongside that description rather
+than replacing it. The charter's closing paragraphs therefore address that permission directly.
+
+*`num_max_findings = 12`.* The value is interpolated into the field description as
+`A concise list (0-{num_max_findings} issues)`, so the model reads it as the expected shape of an
+answer. It is set high enough not to bind on a substantiated diff; it does not license padding.
+
+== Category ceiling
+
+A single prompt that accumulates rules degrades. The charter keeps to roughly ten categories, and a
+need beyond that is a second, focused pass, not another bullet. The generator in
+`cuioss/plan-marshall` enforces the ceiling with a test, and the same test fails when the
+substantiation bar or the anti-fabrication clause is diluted as packs are composed.
+
+== Verifying a charter change
+
+A green run proves nothing: an empty review is what a broken charter produces. A charter change is
+verified with known-answer runs, by commenting `/review` on a pull request whose defects are known:
+
+* `cuioss/plan-marshall#1027` — the review must report the time-of-check/time-of-use race around
+`shutil.move` and the empty-string filename resolving to a directory.
+* `cuioss/plan-marshall#1042` — the review must report something narrow, cheap to fix, or confined
+to test code. A review returning only the major defects has not discharged the severity clause.
+
+== `/improve`
+
+`[pr_code_suggestions]` carries the same substantiation bar as the review charter, because this
+tool writes suggested code into the diff:
+
+* `commitable_code_suggestions = true` publishes suggestions as inline review comments, which
+plan-marshall's `automatic-review` records as participation evidence for this reviewer.
+* `extra_instructions` states the substantiation bar, a ceiling of 12 suggestions stated in prose,
+the severity rule, and no stylistic rewrites.
+* `enable_help_text` and `enable_chat_text` are off. `enable_intro_text` is not a key of
+`[pr_code_suggestions]` in the pinned image, so the `/improve` preamble is not suppressed; verify any
+key added here against that section of `configuration.toml`, not against the whole file.

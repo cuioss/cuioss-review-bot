@@ -1,75 +1,18 @@
-# Central PR-Agent configuration for the cuioss organization.
+# Organization-level PR-Agent configuration for the cuioss organization.
 #
-# Read by PR-Agent as the ORGANIZATION-LEVEL global settings file: the repository must be
-# named exactly `pr-agent-settings`, and the file must sit at the root of its default branch.
-# It is merged BENEATH any repository-local `.pr_agent.toml`, so a repo that overrides one
-# key keeps everything else from this file.
+# PR-Agent reads this file from the root of this repository's default branch, looking the
+# repository up under its hard-coded name `pr-agent-settings` and reaching cuioss/cuioss-review-bot
+# through GitHub's rename redirect. It is merged BENEATH any repository-local `.pr_agent.toml`, so a
+# repository that overrides one key keeps every other key from this file.
 #
-# Rationale for every setting, and the non-obvious mechanics of this setup: ./README.adoc
+# Rationale for each setting: README.adoc and doc/*.adoc.
 
 [config]
-# Gemini via VERTEX AI (`vertex_ai/…`), not AI Studio (`gemini/…`). Vertex draws on the GCP
-# free-trial credits and is reached keylessly through Workload Identity Federation, so no
-# Google credential is stored in GitHub. The upstream docs page still lists only
-# `gemini/gemini-1.5-flash`; the authoritative list is the MAX_TOKENS registry in
-# pr_agent/algo/__init__.py. See README.adoc "Upstream docs are stale".
-#
-# The GCP project and location are NOT here — they are deployment identity, carried as org
-# variables by the reusable workflow, so the project id stays out of this public repo.
-#
-# There is NO AI Studio fallback: the GEMINI_API_KEY secret is deleted and the workflow no
-# longer passes it, so a `gemini/…` id here would fail at the model call. Reviving that route
-# means re-creating the secret AND re-adding the env line. A wrong model id used to cost one
-# silent, review-less run per PR; the published-review gate now makes it fail loudly instead.
-# This list is EVIDENCE, not preference. A self-selecting ladder was run once on purpose to find
-# out what this project can serve, and plan-marshall#1031's run log answered:
-#
-#   gemini-3.5-pro   404 — not available to this project
-#   gemini-3.1-pro   404 — not available to this project
-#   gemini-2.5-pro   429 throttled, retried, then SERVED   ("model": "gemini-2.5-pro")
-#
-# Both 404 rungs are therefore removed: they cost ~8 wasted calls and roughly a minute per review
-# to re-learn a fixed fact. Do NOT reinstate a 3.x *pro* id without first confirming the model
-# card offers it — that tier is not available here, and the 404 message ("not found or your
-# project does not have access to it") is ambiguous enough to look like a transient fault.
-#
-# What the project DOES offer from the 3 series is the FLASH line, and its leader is
-# `gemini-3.7-flash` (Model Garden reports `publishers/google/models/gemini-3.7-flash`; the
-# LiteLLM form prepends the provider). Entitlement was CHECKED against this project before the
-# promotion, not inferred from the model being GA: a direct generateContent call to
-# projects/<this project>/locations/global/publishers/google/models/gemini-3.7-flash answered
-# HTTP 200 with "modelVersion": "gemini-3.7-flash". The same probe served 3.6-flash and
-# 3.5-flash, so the head of this ladder is entitlement-checked rather than assumed. Do the same
-# before promoting the next one: the 404 rungs above were ids the pinned image itself registers.
-#
-# The ladder is ordered newest-generation-first. Two orderings need evidence, and both have it:
-#
-#   3.7-flash ahead of 3.6-flash — Google's own "Gemini 3.7 Flash model evaluation", 3.7 vs 3.6:
-#   FrontierCode 1.1 43.6 vs 34.4, DeepSWE v1.1 65.3 vs 48.6, Code Arena 1588 vs 1536,
-#   Terminal-Bench 2.1 85.8 vs 78.0, Terminal-Bench 3.0 14.9 vs 5.4, and — the row that matters
-#   most for a reviewer handed a whole diff — GDM-MRCR v2 (8-needle) at 128k, 97.0 vs 91.8. NOT
-#   a clean sweep: 3.6 keeps CharXiv Reasoning (85.2 vs 84.5 without tools, 89.4 vs 88.7 with),
-#   which is chart comprehension and not this workload.
-#
-#   any 3-series flash ahead of pro — 3.6-flash beats 3.1 PRO on all four coding and agentic
-#   benchmarks: SWE-Bench Pro 58.7 vs 54.2, Terminal-Bench 2.1 78.0 vs 73.8, MLE-Bench 63.9 vs
-#   42.6, DeepSWE v1.1 49 vs 12. Pro keeps only narrow leads on pure reasoning (GPQA 94.3 vs 92.8,
-#   HLE 44.4 vs 38.3), which is not this workload, and flash sidesteps the 429 backoff that
-#   2.5-pro incurs. 2.5-pro is a generation older still, so ranking it ahead of a 3-series flash
-#   would have made a fallback a downgrade — it sits at the BACK, not behind the leader.
-#
-# The promotion is ELECTIVE, not forced. 3.6-flash is neither deprecated nor carrying a retirement
-# date, and introductory pricing ($0.75 / $3.75 per 1M in/out) covers BOTH models through
-# 2026-12-31 — so this is cost-neutral until then, and equally costly for both after it.
-#
-# 3.6-flash is therefore DEMOTED, not dropped. It is the first fallback because it is what served
-# every review before this change: if the new leader 404s or 400s, the ladder lands on the model
-# that worked yesterday at the price of one wasted call. Leaving it out would have made the first
-# fallback a two-generation drop.
-#
-# Do not "promote to pro" as a remedy for thin reviews. That was proposed here once and was
-# wrong twice over: it contradicts the benchmarks above, and review depth turned out to be
-# governed by the charter in [pr_reviewer], not by the model — see the note there.
+# The model ladder, newest flash generation first and any 3-series flash before pro. Vertex AI
+# (`vertex_ai/…`), reached keylessly through Workload Identity Federation. The GCP project and
+# location are organization variables passed by the reusable workflow, not keys here. There is no
+# AI Studio (`gemini/…`) route. Check a new leader's entitlement for this project before promoting
+# it; 3.x pro ids are not available to this project. See doc/models.adoc.
 model = "vertex_ai/gemini-3.7-flash"
 fallback_models = [
     "vertex_ai/gemini-3.6-flash",
@@ -78,216 +21,58 @@ fallback_models = [
     "vertex_ai/gemini-2.5-pro",
 ]
 
-# REQUIRED by the model above, not optional tuning. `gemini-3.7-flash` is absent from
-# pr_agent/algo/__init__.py MAX_TOKENS in the pinned image, and an unregistered model does not
-# degrade gracefully — utils.py get_max_tokens() RAISES unless custom_model_max_tokens is
-# positive. This value is the model's real input window (3.7-flash is 1M in / 64k out);
-# max_model_tokens below still clamps it, because get_max_tokens() takes the min of the two.
-#
-# Checked against the pinned digest itself rather than inferred: the Gemini rows of that table are
-# the 1.5 / 2.0 / 2.5 ids plus gemini-3-*-preview, 3.1-* and the 3.5 pair, under both the
-# `vertex_ai/` and `gemini/` prefixes. It stops there. NEITHER 3.7-flash NOR 3.6-flash is
-# registered, so this line covers the first fallback as well as the leader — the ladder does not
-# become safe by falling through.
-#
-# Delete this line the day the pinned image registers BOTH of them, and not before.
+# Required: gemini-3.7-flash and gemini-3.6-flash are absent from the MAX_TOKENS registry of the
+# pinned image, and get_max_tokens() raises for an unregistered model unless this is positive. The
+# model's input window; max_model_tokens below still clamps it. Remove only when the pinned image
+# registers every unregistered model on the ladder. See doc/models.adoc.
 custom_model_max_tokens = 1048576
 
-# REQUIRED by the Gemini 3 generation. PR-Agent defaults to 0.2 — a Gemini-2.5-era setting — and
-# Google's Gemini 3 guidance is explicit and unusually strong:
-#
-#   "For all Gemini 3 models, we strongly recommend keeping the temperature parameter at its
-#    default value of 1.0. [...] lowering it may lead to unexpected behavior, such as looping or
-#    degraded performance, particularly in complex mathematical or reasoning tasks."
-#
-# The migration section repeats it as an action item: remove explicit temperature parameters,
-# especially low ones. Earlier models rewarded lowering temperature for determinism; on Gemini 3
-# that intuition is actively harmful, because its reasoning is tuned for the default.
-#
-# This was NOT dead config — 0.2 reached the model on every review this org has ever run.
-# Verified end to end in the pinned image: configuration.toml:53 defaults temperature=0.2,
-# pr_reviewer.py:233 passes get_settings().config.temperature into chat_completion(), and
-# litellm_ai_handler.py:531-533 sets kwargs["temperature"] for every model NOT in
-# NO_SUPPORT_TEMPERATURE_MODELS — a list of deepseek-reasoner, o1/o3/o4, gpt-5.x-codex,
-# gpt-5-mini and claude-opus-4-7 ids containing no Gemini entry.
-#
-# GOOGLE'S TWO PAGES DISAGREE, and the newer one does not reach the older one. "What's new in
-# Gemini 3.7 Flash" lists temperature, top_p, top_k and candidate_count as deprecated parameters
-# to REMOVE on migration; the Gemini 3 developer guide, which does not mention 3.7 anywhere,
-# still says to KEEP temperature at 1.0. Nothing on the older page marks it superseded.
-#
-# Settled by observation against the real endpoint rather than by choosing a page. 3.7-flash
-# ACCEPTS the parameter — generateContent returned HTTP 200 at temperature 1.0 and at 0.2, and
-# 200 again with top_p, top_k and candidate_count all set alongside it. The parameter is also
-# still RANGE-VALIDATED there: 3.0 and -1.0 each return HTTP 400, "the supported range is from 0
-# (inclusive) to 2.0001 (exclusive)". So "deprecated" here means advice, not rejection.
-#
-# That 200 is not a vacuous pass. The same endpoint on the same model DOES reject an unsupported
-# generationConfig value — thinkingLevel MINIMAL returns HTTP 400 "Thinking level is unsupported:
-# THINKING_LEVEL_MINIMAL" — so a 200 on temperature is a real accept, not blanket tolerance.
-#
-# Hence the key STAYS, at 1.0. Deleting it does not remove the parameter, it hands the model
-# pr-agent's own 0.2 — the exact Gemini-2.5-era value this block exists to prevent. The one
-# suppression reachable from this file, custom_reasoning_model = true, also disables system
-# messages for the model (configuration.toml:29), so it is not a temperature-only lever and is
-# not worth its collateral. Revisit only if a future model answers 400 instead of 200 above.
+# Gemini 3 is tuned for temperature 1.0; PR-Agent would otherwise send its default of 0.2.
+# See doc/models.adoc.
 temperature = 1.0
 
-# Upstream defaults this to 32000, which silently caps what the reviewer ever SEES: with
-# large_patch_policy = "clip", any diff above the limit is truncated before the model reads it.
-# Promoting to a larger-context model without raising this would buy the stronger model and
-# still feed it a truncated diff.
-#
-# Clipping does not merely reduce coverage — it manufactures CONFIDENT WRONG findings, which is
-# worse than a missed one. API-Sheriff#118 (68 files, 6706 additions, AES-GCM cookie sealing)
-# logged `Tokens: 168188, total tokens over limit: 128000` and reported an "Uncompleted Future
-# Hang": that `leader.complete(outcome)` could be bypassed on a throw, leaving coalesced waiters
-# blocked forever. The method has an unconditional `finally { leader.complete(...) }` that makes
-# it impossible — and the reviewer QUOTED the opening of that very finally block, clipped off
-# just before the line that refutes it. A truncated diff reads as a complete one to the model.
-#
-# 256000 is sized on evidence, not taste: 2x the largest real diff observed (168188), which keeps
-# a normal-sized security change in this org inside the window. Still a quarter of the 1M
-# ceiling, because unbounded turns one pathological pull request into a pathological bill.
-#
-# Raising this does NOT make a clipped review detectable — it only makes clipping rarer. The
-# "over limit" line in the run log remains the only signal, and a review published above the
-# limit must be read as INCONCLUSIVE rather than clean. See README.adoc "A clipped diff".
+# The largest diff the reviewer reads. Above it, large_patch_policy "clip" truncates the diff
+# before the model sees it, and a review of a clipped diff is inconclusive.
+# See doc/models.adoc and doc/review-limits.adoc.
 max_model_tokens = 256000
 
-# Upstream defaults this to 500, which silently truncated the PR description on most of our pull
-# requests. git_provider.py:250-262 clips the description with clip_tokens() before it reaches the
-# prompt, and pr_reviewer_prompts.toml places it in the "--PR Info--" block the reviewer reads for
-# intent. plan-marshall#1027's body is 4503 characters — roughly 1100-1300 tokens — so well over
-# half of it never reached the model, with no marker and no log line.
-#
-# This is the description channel's version of the clipped-diff defect: the reviewer receives a
-# fragment and treats it as the whole statement of intent. It matters more here than it looks,
-# because the PR description is the ONLY route by which authored intent reaches this reviewer —
-# repo_context_files reads the DEFAULT BRANCH (repo_context.py passes from_default_branch=True),
-# so a document committed on the PR branch is invisible to it, and pointing it at the head would
-# let PR content rewrite the reviewer's own instructions.
-#
-# 2000 gives roughly 4x headroom over the largest body observed. Cost is negligible against a
-# 256000-token window.
+# The pull request description is the only channel for stated intent; the upstream default of 500
+# clips it silently. See doc/review-limits.adoc.
 max_description_tokens = 2000
 
-# Upstream defaults this to [".md", ".txt"]. The name is misleading and cost us a wrong reading
-# once: it does NOT exclude those files from the review. git_patch_processing.py extend_patch()
-# calls should_skip_patch() and, when it matches, returns the patch UNCHANGED — the hunks still
-# reach the model. What is skipped is only the patch EXTENSION: the patch_extra_lines_before /
-# _after source lines spliced around each hunk. (Markdown is also absent from the effective
-# bad_extensions list — `md` and `txt` sit in bad_extensions.extra, which is inert while
-# use_extra_bad_extensions is false, as it is here.)
-#
-# `.md` is removed because in this org markdown is not documentation about the code — in
-# plan-marshall it IS the executable contract: skills, standards and workflow files are read by
-# the agent at runtime. A two-line diff in a standards document is not reviewable without the
-# rule it sits inside, whereas a Python hunk usually carries its own context in the identifiers.
-#
-# `.txt` keeps the skip: prose with no contract weight, and no context worth paying for.
+# Files matching these types keep their hunks but lose the surrounding context lines. `.md` is not
+# listed, because markdown is often an executable contract in this organization.
+# See doc/review-limits.adoc.
 patch_extension_skip_types = [".txt"]
 
-# The reviewer never pushes code, so it never needs elevated permissions. This lets every
-# caller workflow run without `contents: write`.
+# Withholds the push_code capability only; the reviewer never pushes, and callers need no
+# `contents: write`.
 restricted_mode = true
 
-# No "Preparing review..." placeholder comment — it is UI chatter, and it is what forced the
-# bot-sender de-loop guard upstream.
+# No "Preparing review..." placeholder comment.
 publish_output_progress = false
 
-# Review against this org's documented project rules (branch prefixes, build conventions,
-# workflow discipline), not just generic code quality. This is the one capability the other
-# two reviewers lack. Read from the default branch only — never from the PR head — so PR
-# content cannot rewrite the reviewer's own instructions.
+# Each repository's documented project rules, read from the default branch only so pull request
+# content cannot rewrite the reviewer's instructions. The files share one line budget, consumed in
+# order, and file names are case-sensitive. See doc/review-limits.adoc.
 repo_context_files = ["CLAUDE.md", "AGENTS.md"]
 repo_context_from_default_branch = true
 
-# --- Deliberately ABSENT: the skip rules ---------------------------------------------------
-# ignore_pr_labels / ignore_pr_authors / ignore_pr_title / ignore_pr_{source,target}_branches
-# are consumed ONLY by the webhook servers (should_process_pr_logic), never by the GitHub
-# Action runner. Setting them here would be dead config that silently reviews everything.
-# The org skip rules (dependabot[bot], cuioss-release-bot[bot], the skip-bot-review label)
-# are enforced as job-level `if:` guards in
-#   cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml
-# See README.adoc "ignore_pr_* is dead config in GitHub Action mode" — the single most
-# important thing to know about this setup.
-# ------------------------------------------------------------------------------------------
+# The skip rules are NOT set here. ignore_pr_* keys are read only by PR-Agent's webhook servers,
+# never by the GitHub Action runner; the rules are job-level `if:` guards in
+# cuioss/cuioss-organization's reusable-cuioss-review-bot.yml. See doc/workflow-integration.adoc.
 
-# `.plan/` is plan-marshall's own bot-authored orchestration ledger — machine-generated
-# bookkeeping, never source any reviewer's charter is aimed at. This narrows what reaches the
-# model on a mixed diff; a `.plan`-only diff is a whole-job skip handled one layer up, in
-# cuioss/cuioss-organization's reusable-pr-agent-review.yml. See README.adoc "[ignore] — .plan/**".
+# plan-marshall's `.plan/` records are removed from a mixed diff before it reaches the model; a
+# `.plan`-only diff is skipped by the reusable workflow. See doc/workflow-integration.adoc.
 [ignore]
 glob = [".plan/**"]
 
 [pr_reviewer]
-# Charter: this is the THIRD reviewer, beside CodeRabbit and Sourcery. It is pointed at the
-# security depth lost when the consumer tier of Gemini Code Assist was retired.
-#
-# This text was rewritten after being measured, and the measurement was unambiguous: across five
-# pull requests, four models (3.5-flash, 2.5-pro, 3.6-flash) and diffs from 5k to 57k tokens,
-# EVERY published review was byte-identical at 242 bytes — the bare table, zero findings. A
-# result invariant under model swap is not a model result.
-#
-# The controlled run that settled it: `/review` on plan-marshall#1027 — gemini-3.6-flash, full
-# 40748-token diff with no pruning, against the final commit. In that same diff CodeRabbit had
-# already reported a TOCTOU race around `shutil.move` and an empty-string filename resolving to
-# a directory. Both sit inside the charter below. This reviewer reported neither.
-#
-# The cause was this text. Upstream's own field description for key_issues_to_review is ALREADY
-# conservative ("Only include issues you are confident about... An empty list is acceptable"),
-# and the previous charter stacked three further suppressors on top of it, with nothing pushing
-# the other way:
-#
-#   "do not duplicate [the other reviewers]"   — an instruction to withhold, and the model cannot
-#                                                know what the other two actually reported
-#   "only when you can name the concrete input" — redundant with the base confidence gate
-#   "prefer one well-evidenced finding"         — resolves to zero when nothing reaches certainty
-#
-# The scope was wrong for this codebase too: six classical AppSec bullets (injection, SSRF,
-# authn) that Python tooling repositories almost never contain, so the model correctly concluded
-# its assignment was empty. The defect classes we actually ship — concurrency, resource
-# lifecycle, fail-open error handling, state corruption — were a sub-clause of one bullet.
-#
-# Do NOT reintroduce withholding language here. Overlap with the other two reviewers costs one
-# duplicate comment; suppression costs the finding. That trade is not close. The charter was
-# written against a failure mode we never had (noise) and produced the opposite one.
-#
-# The closing paragraph — treat stated intent as a claim to check — is deliberately CONDITIONAL
-# ("If the pull request description states..."). The reviewer reads the description from the
-# "--PR Info--" block, and nothing guarantees a description states intent at all. Writing the
-# clause conditionally makes it correct in both worlds: inert when there is no stated intent, and
-# active the moment a generator starts emitting one. That removes a cross-repository sequencing
-# hazard — this file and the tool that writes pull request bodies can land in either order.
-#
-# Its purpose is to pre-empt an anchoring failure rather than a suppression one. Telling a
-# reviewer what a change was meant to do invites it to confirm the account instead of examining
-# the code — the same pressure that produced five empty reviews, arriving as context rather than
-# as instruction. See README.adoc "The PR description is the only route for authored intent".
-# The last two paragraphs answer a DIFFERENT suppressor from the one above, and it is the harder
-# one because it does not live in this file. "No major issues detected" is not a setting and there
-# is no severity filter to turn off — it is simply the text rendered when key_issues_to_review comes
-# back empty. The suppression is in that field's own description, in the pinned image at
-# pr_reviewer_prompts.toml:150:
-#
-#   "A concise list (0-{{ num_max_findings }} issues) of bugs, security vulnerabilities, or
-#    significant performance concerns introduced in this PR. Only include issues you are confident
-#    about. ... An empty list is acceptable if no clear issues are found."
-#
-# Four suppressors in one sentence — a low ceiling framed as "concise", a scope narrower than the
-# categories above, a confidence gate, and explicit permission to say nothing. This text is not
-# reachable from configuration: extra_instructions is appended as a separate block earlier in the
-# system prompt, so it argues alongside the field description rather than replacing it.
-#
-# That is why the closing paragraphs address the empty-list permission directly instead of adding
-# more categories. Category growth was already tried and is capped — see README.adoc
-# "Recall beats precision". What was never addressed is the model's licence to report nothing.
-#
-# The anti-fabrication clause is load-bearing and must not be dropped when this is next tuned.
-# Pressure to report more is exactly the pressure that produces invented mechanisms; this reviewer
-# has done that once already (API-Sheriff#103, a confident finding about a branch that cannot be
-# reached). Loosening the severity bar while HOLDING the substantiation bar is the whole design.
+# The central charter: the spine applied to every review that does not select its own. A
+# repository that opts in through `.github/project.yml` receives packs/spine.md, its selected
+# packs and its additional rules instead. Name categories to look for, never withholding language;
+# keep the substantiation and anti-fabrication clauses; the closing paragraphs contest the
+# empty-list permission of the key_issues_to_review field description. See doc/charter.adoc.
 require_security_review = true
 require_tests_review = true
 extra_instructions = """
@@ -326,7 +111,7 @@ traced in the code shown. But do not return an empty list because nothing reache
 or importance. There is no such bar.
 """
 
-# Suppress the parts of the review that are UI rather than findings.
+# Output that is not a finding is switched off.
 require_ticket_analysis_review = false      # no linked-issue workflow in this org
 require_estimate_effort_to_review = false
 require_can_be_split_review = false
@@ -335,107 +120,44 @@ enable_intro_text = false
 enable_help_text = false
 enable_review_labels_security = false       # labels are not part of our workflow
 enable_review_labels_effort = false
-# Publish even when the review found nothing. This was `false` to suppress "No major issues
-# detected" noise, but that made a clean review and a total failure INDISTINGUISHABLE at the pull
-# request — both show no comment. It cost a real misread: plan-marshall#1024 was recorded as having
-# had zero bot review and taken toward a merge decision on that basis, when this reviewer had in
-# fact read the diff and cleared it ({"key_issues_to_review": [], "security_concerns": "No"}),
-# visible only in a workflow log nobody reads.
-#
-# It also starved the consumer pipeline: plan-marshall's automatic-review collects `pr-comment`
-# findings as its evidence of participation, so a reviewer that never speaks can never be counted
-# — `enabled_bots` would claim three reviewers while the record could only ever show two.
-#
-# The cost is one short comment per clean pull request. That is the price of a reviewer whose
-# agreement is observable, and a bot that is invisible whenever it agrees is worth far less than
-# one that says so.
+
+# Publish a clean review too, so a review that found nothing is distinguishable from a run that
+# produced none. See doc/workflow-integration.adoc.
 publish_output_no_suggestions = true
 
-# One updated comment per PR, and inline suggestions fingerprinted so a push does not repost
-# what is already on the PR.
+# One updated comment per pull request; inline suggestions are fingerprinted so a push does not
+# repost them.
 persistent_comment = true
 persistent_inline_comments = true
 
-# Upstream defaults this to true, which posts a SECOND, separate comment every time the
-# persistent review is refreshed:
-#   **[Persistent review](<url>)** updated to latest commit <url>
-# (git_provider.py publish_persistent_comment_full). It carries no review content, and it is
-# redundant even as a pointer: the same call already stamps "(Review updated until commit …)"
-# into the persistent comment's own header.
-#
-# It is not merely cosmetic. The comment is authored by the reviewer identity, so a consumer
-# that collects the bot's comments as review findings — plan-marshall's automatic-review does
-# exactly that — files it as a finding requiring triage. Setting publish_output_no_suggestions
-# to true above made this worse, not better: clean pull requests now carry a persistent comment,
-# so there is something to "update" on every subsequent review.
+# No separate "Persistent review updated to latest commit" comment on each refresh.
+# See doc/workflow-integration.adoc.
 final_update_message = false
 
-# Upstream defaults this to 3. It is not merely a cap — it is interpolated directly into the
-# `key_issues_to_review` field description as "A concise list (0-{{ num_max_findings }} issues)",
-# so the model reads it as the shape of an expected answer, not as a ceiling it is unlikely to
-# reach. A low number and the word "concise" in the same sentence are a suppressor.
-#
-# Raised from 5 on the plan-marshall#1042 evidence, where CodeRabbit reported six substantiated
-# findings across the same diff. Five was capable of binding.
-#
-# This does NOT license padding — the charter above forbids reporting an untraced mechanism, and
-# that constraint is the one that must hold if this number is raised again.
+# Interpolated into the key_issues_to_review field description, so the model reads it as the
+# expected size of an answer; set high enough not to bind. It does not license padding.
+# See doc/charter.adoc.
 num_max_findings = 12
 
 [pr_code_suggestions]
-# /improve is now reachable automatically, gated per PULL REQUEST by the `pr-agent-improve` label
-# resolved in cuioss/cuioss-organization's reusable-pr-agent-review.yml. A caller's auto-improve
-# input still forces it on for a whole repository. This block exists so that a labelled pull
-# request gets the same deliberate tuning [pr_reviewer] gets, instead of silently falling back to
-# upstream defaults on the one path that writes into the diff.
-#
-# Two things about /improve were ASSUMED for a long time and are now checked against upstream
-# v0.39.0. Both were wrong in the direction that would have wasted the work. Citations and the
-# stated coverage limit: README.adoc "What was actually checked about /improve".
-#
-#   - There is no `pr_reviewer.inline_code_comments`. Inline publishing is not a cheaper switch
-#     on /review that would make this whole block unnecessary — it is a /improve capability,
-#     reached through commitable_code_suggestions below.
-#   - `restricted_mode = true` in [config] does NOT gate /improve. It withholds exactly one
-#     capability, `push_code`, which /improve does not use — so keeping every caller free of
-#     `contents: write` costs nothing here.
+# /improve runs on a pull request labelled `cuioss-review-bot-improve`, or on every pull request of
+# a repository whose caller sets `auto-improve: true`. See doc/workflow-integration.adoc and
+# doc/charter.adoc.
 
-# Publish suggestions as inline review comments rather than one collapsed table. This is the key
-# that makes this reviewer's inline shape real, and plan-marshall's automatic-review now records
-# `inline` as participation evidence for this bot on exactly that basis.
+# Suggestions are published as inline review comments.
 commitable_code_suggestions = true
 
-# Suppress the parts of the output that are UI rather than findings — the same treatment
-# [pr_reviewer] gets above, and for the same reason: a consumer that collects this bot's comments
-# as findings files every one of them as something to triage.
-#
-# The suppression here is NARROWER than [pr_reviewer]'s, and the difference is a real gap rather
-# than an oversight. `enable_intro_text` does NOT exist under [pr_code_suggestions] in the pinned
-# v0.39.0 image — the section declares 23 keys and that is not among them. It is a real key, but
-# scoped to [pr_reviewer], which is exactly why a file-scoped grep for it returns a hit that says
-# nothing about this section. It was set here once, on that mistaken reading, and was inert.
-#
-# No key under [pr_code_suggestions] is a rename of it. `publish_output_no_suggestions` and
-# `persistent_comment` are behavioural neighbours, not drop-in equivalents, so substituting either
-# would replace one unverified claim with another. The /improve preamble is therefore UNSUPPRESSED
-# and that is a known, accepted state — not something a future edit should "fix" by guessing a key.
-#
-# Verify any addition here SECTION-SCOPED, never file-scoped: `enable_help_text` alone appears in
-# nine sections of configuration.toml with differing defaults ([pr_analyze] defaults true).
+# Output that is not a suggestion is switched off. `enable_intro_text` is not a key of this
+# section in the pinned image, so the /improve preamble stays; verify any key added here against
+# this section of configuration.toml, not the whole file.
 enable_help_text = false
 enable_chat_text = false
 
-# One updated comment per pull request, matching persistent_comment in [pr_reviewer].
+# One updated comment per pull request.
 persistent_comment = true
 
-# The substantiation bar carried over from the charter, and it is carried over DELIBERATELY: this
-# tool writes suggested code into the diff, so a fabricated mechanism here costs more than it does
-# in a review comment. The findings ceiling is stated in prose rather than as a numeric key so it
-# reaches the model on the one channel that is guaranteed to be read, matching num_max_findings = 12
-# above.
-#
-# Do not add withholding language to this block. The failure this reviewer actually had was
-# silence, not noise — see README.adoc "A charter written against noise produces silence".
+# The substantiation bar of the review charter, a ceiling of 12 suggestions stated in prose, and
+# no withholding language. See doc/charter.adoc.
 extra_instructions = """
 Prioritise security and correctness over style.
 
