@@ -1,7 +1,7 @@
 <!-- GENERATED ARTIFACT — do not edit by hand.
 Derived from the cuioss/plan-marshall marketplace (marketplace/bundles/**).
 Regenerate with:
-  ./pw generate --target pr-agent --output target/pr-agent
+  ./pw generate --target cuioss-review-bot --output target/cuioss-review-bot
 This artifact carries the plugin domain part alone. The review charter lives in the
 spine artifact (spine.md) and appears in no domain artifact, so this file on its
 own carries none of it. Apply the spine artifact alongside this one.

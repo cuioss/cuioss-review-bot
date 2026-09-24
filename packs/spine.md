@@ -1,7 +1,7 @@
 <!-- GENERATED ARTIFACT — do not edit by hand.
 Derived from the cuioss/plan-marshall marketplace (marketplace/bundles/**).
 Regenerate with:
-  ./pw generate --target pr-agent --output target/pr-agent
+  ./pw generate --target cuioss-review-bot --output target/cuioss-review-bot
 This is the spine artifact. It carries the cross-cutting review charter exactly once.
 The generator emits it on every run, and it is meant to apply to every review whichever
 domain artifacts a repository selects.
