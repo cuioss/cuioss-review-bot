@@ -77,9 +77,9 @@ glob = [".plan/**"]
 # This section is shared by both review passes. The security pass (job `review`) reads it as is,
 # with only PR_REVIEWER.EXTRA_INSTRUCTIONS replaced on its assembled path. The code-review pass
 # (job `code-review`) reads every other key here too; its step overrides through environment
-# variables: CONFIG.PUBLISH_OUTPUT = false (a publisher script posts its comment under its own
-# header), auto_describe and auto_improve = false, and PR_REVIEWER.EXTRA_INSTRUCTIONS = the
-# code-review charter. require_security_review is not overridden, so that pass keeps its
+# variables: CONFIG.PUBLISH_OUTPUT = false (publish-code-review.py posts its comment under
+# `## PR Code Review Guide 🧭`), github_action_config.auto_describe and auto_improve = false, and
+# PR_REVIEWER.EXTRA_INSTRUCTIONS = the code-review charter. require_security_review is not overridden, so that pass keeps its
 # security-concerns row. See doc/workflow-integration.adoc and doc/configuration-precedence.adoc.
 require_security_review = true
 require_tests_review = true

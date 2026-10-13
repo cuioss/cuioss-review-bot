@@ -89,9 +89,11 @@ ceiling] for why it is a separate pass.
 [IMPORTANT]
 ====
 Do not add a `code_review:` block until the repository's caller workflow pins a
-`cuioss/cuioss-organization` release whose `reusable-cuioss-review-bot.yml` supports it. Older
-releases accept only `enabled`, `packs` and `additional_rules` under `cuioss-review-bot:`, so they
-reject `code_review` as an unknown key and fail the security review of every pull request.
+`cuioss/cuioss-organization` release that supports it: a release after `v0.41.0`, whose
+`reusable-cuioss-review-bot.yml` carries the `code-review` job and pins its `workflow-scripts/` to
+the same release. The declaration script of `v0.41.0` and earlier accepts only `enabled`, `packs`
+and `additional_rules` under `cuioss-review-bot:`, so it rejects `code_review` as an unknown key and
+fails the review of every pull request. Until the caller's pin moves, the pass is inert.
 ====
 
 === Declaring it
@@ -136,8 +138,9 @@ the first pull request reviewed after the change merges.
 |===
 |Declaration |Effect
 
-|No `code_review:` block
-|No code-review pass. The `review / code-review` check reports skipped.
+|No `code_review:` block, no `cuioss-review-bot:` block, or no `.github/project.yml`
+|No code-review pass. The `review / code-review` job still runs: it logs one line naming the
+declaration state that skipped the pass, skips its remaining steps, and ends green.
 
 |The block without `enabled`
 |No code-review pass. Absence is never consent.
@@ -150,35 +153,45 @@ the first pull request reviewed after the change merges.
 `additional_rules`.
 |===
 
-Unlike the security pass, the code-review pass has no central fallback: disabled means no
-code-review pass.
+Every state but `enabled: true` behaves like the first row. Unlike the security pass, the
+code-review pass has no central fallback: disabled means no code-review pass, and a green
+`review / code-review` check alone does not show that the pass ran.
 
 === What fails the code-review pass
 
-The `review / code-review` job fails, with an error naming the cause, when the block cannot be
-honoured:
+Both review jobs read the declaration with the same script, so a `code_review:` block that cannot
+be honoured fails the security `review` job and the `review / code-review` job alike, each with an
+error naming the cause. The block is validated whether or not it is enabled:
 
 * `code_review:` is not a mapping, or carries a key other than `enabled`, `packs` and
 `additional_rules`;
 * `enabled` is not a boolean;
 * `packs` or `additional_rules` is not a list of strings;
-* a pack key does not start with `code-review-`, is `code-review-spine`, does not exist under
-`packs/`, or cannot be fetched.
+* a pack key does not start with `code-review-`, or is `code-review-spine`;
+* with `enabled: true`, a code-review pack (or the code-review spine) does not exist under
+`packs/`, cannot be fetched, or is empty.
 
-The failures of the outer block listed under xref:#what-fails-the-review[What fails the review] —
-an invalid `.github/project.yml`, a duplicated key, a legacy `pr-agent:` block — fail both passes.
+Every failure under xref:#what-fails-the-review[What fails the review] fails both jobs the same
+way.
+
+When the pass runs, the `review / code-review` job also fails when the model produced no review,
+or when its comment was not published fresh — see
+xref:workflow-integration.adoc#code-review-pass[The code-review pass].
 
 [#what-fails-the-review]
 == What fails the review
 
 The review job fails, with an error naming the cause, instead of falling back to the central
-charter, when the declaration cannot be honoured:
+charter, when the declaration cannot be honoured. The `review / code-review` job reads the same
+declaration and fails with it:
 
 * `cuioss-review-bot:` is not a mapping, or carries a key other than `enabled`, `packs`,
 `additional_rules` and `code_review`;
 * `enabled` is not a boolean;
 * `packs` or `additional_rules` is not a list of strings;
-* a pack key does not exist under `packs/`, cannot be fetched, or is `spine`;
+* a pack key does not exist under `packs/`, cannot be fetched, is `spine`, or starts with
+`code-review-` (code-review packs are listed under `code_review.packs` only);
+* the `code_review:` block cannot be honoured — see xref:#code-review-pass[The code-review pass];
 * the composed charter is empty;
 * `.github/project.yml` is not valid YAML or repeats a mapping key;
 * the file carries a top-level `pr-agent:` block, whatever it declares.
@@ -194,13 +207,17 @@ order and the number of additional rules, and its body is the exact text the rev
 the central path the log instead names the central charter and the declaration state that selected
 it.
 
-For the code-review pass, open the `review / code-review` job and expand its `Assembled code-review
-charter` group. Its title names `code-review-spine`, the packs in order and the number of additional
-rules, and its body is the exact text that pass received. On the pull request the pass publishes
-its own persistent comment, headed `## PR Code Review Guide 🧭`, beside the security review's
-`## PR Reviewer Guide 🔍`; each pass updates only its own comment. A pull request with only the
-security comment, or a `review / code-review` check that reports skipped, means the pass did not
-run: check the declaration and the caller's pinned release.
+For the code-review pass, open the `review / code-review` job and expand the `Assembled code-review
+charter` group of its declaration step. Its title names `code-review-spine`, the packs in order and
+the number of additional rules, and its body is the exact text that pass received. On the pull
+request the pass publishes its own persistent comment, headed `## PR Code Review Guide 🧭`, beside
+the security review's `## PR Reviewer Guide 🔍`; each pass updates only its own comment.
+
+A green `review / code-review` check does not by itself mean the pass ran. If the declaration step
+instead logs a single `Code-review charter: none — the code-review pass is skipped` line naming a
+declaration state, and the pull request carries only the security comment, the pass did not run:
+check the declaration on the default branch. A pull request with no `review / code-review` check at
+all is reviewed through a release that predates the pass: check the caller's pin.
 
 The job's schema and every failure path are specified in
 https://github.com/cuioss/cuioss-organization/blob/main/docs/project-yml-schema.adoc[`project-yml-schema.adoc`];

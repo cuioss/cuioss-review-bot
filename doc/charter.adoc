@@ -45,7 +45,8 @@ codebase. It is always the first part of that pass's assembled charter.
 language or artifact type, each naming the mechanism a diff breaks.
 
 The two sets do not mix. A security declaration selects security packs and a code-review
-declaration selects `code-review-*` packs, each by its full key.
+declaration selects `code-review-*` packs, each by its full key; the workflow fails a declaration
+that lists a pack under the other pass.
 
 A repository that opts in to a pass receives that pass's spine, then the packs it selects in the
 order it lists them, then that pass's own `additional_rules`. A spine cannot be selected, deselected

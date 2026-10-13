@@ -43,8 +43,10 @@ repository selects for itself — see xref:workflow-integration.adoc#charter-ass
 assembly];
 * the code-review step's own exceptions, listed below.
 
-The code-review step of the `code-review` job reads the same `.pr_agent.toml`, including the
-`[pr_reviewer]` section it shares with the security pass, and overrides exactly these keys:
+The reviewer step of the `code-review` job reads the same `.pr_agent.toml`, including the
+`[pr_reviewer]` section it shares with the security pass. Its environment is the central reviewer
+step's — the token, the Vertex AI settings and the `auto_review` caller input included — with
+exactly these exceptions:
 
 [cols="1,1,2"]
 |===
@@ -55,16 +57,17 @@ The code-review step of the `code-review` job reads the same `.pr_agent.toml`, i
 |The pass reviews against `packs/code-review-spine.md`, its selected packs and its own
 `additional_rules`, never the security charter.
 
-|`auto_describe`, `auto_improve`
-|`false`
-|The pass runs `/review` only; `/describe` and `/improve` stay with the security job and its
-caller inputs.
+|`github_action_config.auto_describe`, `github_action_config.auto_improve`
+|literal `false`
+|The pass runs `/review` only, whatever the caller inputs and labels ask of the security job.
 
 |`CONFIG.PUBLISH_OUTPUT`
 |`false`
 |PR-Agent would publish under the security pass's header and overwrite its comment; a publisher
 script posts the code-review comment under its own header instead — see
-xref:workflow-integration.adoc#code-review-pass[The code-review pass].
+xref:workflow-integration.adoc#code-review-pass[The code-review pass]. PR-Agent re-applies
+environment overrides after merging every `.pr_agent.toml`, so no settings file, this one or a
+repository-local one, can turn publishing back on for this step.
 |===
 
 `require_security_review` and every other `[pr_reviewer]` key apply to the code-review pass as
