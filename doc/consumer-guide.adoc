@@ -88,12 +88,11 @@ ceiling] for why it is a separate pass.
 
 [IMPORTANT]
 ====
-Do not add a `code_review:` block until the repository's caller workflow pins a
-`cuioss/cuioss-organization` release that supports it: a release after `v0.41.0`, whose
-`reusable-cuioss-review-bot.yml` carries the `code-review` job and pins its `workflow-scripts/` to
-the same release. The declaration script of `v0.41.0` and earlier accepts only `enabled`, `packs`
-and `additional_rules` under `cuioss-review-bot:`, so it rejects `code_review` as an unknown key and
-fails the review of every pull request. Until the caller's pin moves, the pass is inert.
+Do not add a `code_review:` block until the repository's caller workflow pins
+`cuioss/cuioss-organization` release `v0.42.0` or later, the first release whose
+`reusable-cuioss-review-bot.yml` carries the `code-review` job. The declaration script of `v0.41.0`
+and earlier accepts only `enabled`, `packs` and `additional_rules` under `cuioss-review-bot:`, so
+it rejects `code_review` as an unknown key and fails the review of every pull request.
 ====
 
 === Declaring it
@@ -234,7 +233,7 @@ A green `review / code-review` check does not by itself mean the pass ran. If th
 instead logs a single `Code-review charter: none — the code-review pass is skipped` line naming a
 declaration state, and the pull request carries only the security comment, the pass did not run:
 check the declaration on the default branch. A pull request with no `review / code-review` check at
-all is reviewed through a release that predates the pass: check the caller's pin.
+all is reviewed through a release before `v0.42.0`: check the caller's pin.
 
 The job's schema and every failure path are specified in
 https://github.com/cuioss/cuioss-organization/blob/main/docs/project-yml-schema.adoc[`project-yml-schema.adoc`];
