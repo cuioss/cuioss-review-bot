@@ -4,7 +4,7 @@
 :icons: font
 
 How a repository owner opts a cuioss repository in to a review charter assembled from its own
-declaration, and how to check that it took effect.
+declaration, opts it in to the second, code-review pass, and checks that each took effect.
 
 == Before you start
 
@@ -25,7 +25,8 @@ applied first. It cannot be selected, deselected or replaced.
 A pack key is the file name of a pack under
 https://github.com/cuioss/cuioss-review-bot/tree/main/packs[`packs/`] without `.md`; that directory
 is the only list of published keys, and each pack names the domain it covers in its opening paragraph.
-`spine` is not a pack key.
+`spine` is not a pack key. The keys starting with `code-review-` belong to the code-review pass and
+are selected under `code_review:` only — see xref:#code-review-pass[The code-review pass].
 
 Read the packs you intend to select before you enable them: a pack's rules are reported as findings
 on every pull request.
@@ -76,13 +77,105 @@ pull request reviewed after it merges.
 
 Disabled always means the central charter, never no charter.
 
+[#code-review-pass]
+== The code-review pass
+
+The code-review pass is a second, independent review that runs beside the security review, as the
+separate check `review / code-review`. It reviews against the code-review charter —
+correctness, error handling, resource lifecycle, duplication, documentation accuracy, test quality
+and contract drift — and publishes its own comment. See xref:charter.adoc#category-ceiling[Category
+ceiling] for why it is a separate pass.
+
+[IMPORTANT]
+====
+Do not add a `code_review:` block until the repository's caller workflow pins a
+`cuioss/cuioss-organization` release whose `reusable-cuioss-review-bot.yml` supports it. Older
+releases accept only `enabled`, `packs` and `additional_rules` under `cuioss-review-bot:`, so they
+reject `code_review` as an unknown key and fail the security review of every pull request.
+====
+
+=== Declaring it
+
+Nest a `code_review:` block inside the `cuioss-review-bot:` block, on the default branch:
+
+[source,yaml]
+----
+cuioss-review-bot:
+  enabled: true                # the security pass, unchanged
+  packs: [python, plugin]
+  additional_rules: []
+  code_review:
+    enabled: true
+    packs:
+      - code-review-python
+      - code-review-plan-marshall-plugin-dev
+      - code-review-documentation
+    additional_rules: []
+----
+
+* `enabled` — only `true` runs the pass. Keep it a boolean.
+* `packs` — a list of full pack keys, each starting with `code-review-`, in the order they are
+applied. Never list `code-review-spine`: it is always applied first. An empty or absent list runs
+the pass on `code-review-spine.md` alone.
+* `additional_rules` — a list of strings appended after the packs, the code-review counterpart of
+the outer `additional_rules`. The outer list is not applied to this pass.
+
+The code-review charter is `packs/code-review-spine.md`, then each listed pack, then this block's
+`additional_rules`.
+
+The block is independent of the outer `enabled`. A repository can run the code-review pass beside
+the central security charter by declaring `code_review:` with `enabled: true` and leaving the outer
+`enabled` absent or `false`.
+
+As with the outer block, the declaration is read from the default branch, so it takes effect from
+the first pull request reviewed after the change merges.
+
+=== The states of `code_review.enabled`
+
+[cols="2,3"]
+|===
+|Declaration |Effect
+
+|No `code_review:` block
+|No code-review pass. The `review / code-review` check reports skipped.
+
+|The block without `enabled`
+|No code-review pass. Absence is never consent.
+
+|`enabled: false`
+|No code-review pass.
+
+|`enabled: true`
+|The pass runs on the code-review spine, then each listed pack, then the block's
+`additional_rules`.
+|===
+
+Unlike the security pass, the code-review pass has no central fallback: disabled means no
+code-review pass.
+
+=== What fails the code-review pass
+
+The `review / code-review` job fails, with an error naming the cause, when the block cannot be
+honoured:
+
+* `code_review:` is not a mapping, or carries a key other than `enabled`, `packs` and
+`additional_rules`;
+* `enabled` is not a boolean;
+* `packs` or `additional_rules` is not a list of strings;
+* a pack key does not start with `code-review-`, is `code-review-spine`, does not exist under
+`packs/`, or cannot be fetched.
+
+The failures of the outer block listed under xref:#what-fails-the-review[What fails the review] —
+an invalid `.github/project.yml`, a duplicated key, a legacy `pr-agent:` block — fail both passes.
+
+[#what-fails-the-review]
 == What fails the review
 
 The review job fails, with an error naming the cause, instead of falling back to the central
 charter, when the declaration cannot be honoured:
 
-* `cuioss-review-bot:` is not a mapping, or carries a key other than `enabled`, `packs` and
-`additional_rules`;
+* `cuioss-review-bot:` is not a mapping, or carries a key other than `enabled`, `packs`,
+`additional_rules` and `code_review`;
 * `enabled` is not a boolean;
 * `packs` or `additional_rules` is not a list of strings;
 * a pack key does not exist under `packs/`, cannot be fetched, or is `spine`;
@@ -100,6 +193,14 @@ Open the reviewer job of a pull request reviewed after the declaration landed, a
 order and the number of additional rules, and its body is the exact text the reviewer received. On
 the central path the log instead names the central charter and the declaration state that selected
 it.
+
+For the code-review pass, open the `review / code-review` job and expand its `Assembled code-review
+charter` group. Its title names `code-review-spine`, the packs in order and the number of additional
+rules, and its body is the exact text that pass received. On the pull request the pass publishes
+its own persistent comment, headed `## PR Code Review Guide 🧭`, beside the security review's
+`## PR Reviewer Guide 🔍`; each pass updates only its own comment. A pull request with only the
+security comment, or a `review / code-review` check that reports skipped, means the pass did not
+run: check the declaration and the caller's pinned release.
 
 The job's schema and every failure path are specified in
 https://github.com/cuioss/cuioss-organization/blob/main/docs/project-yml-schema.adoc[`project-yml-schema.adoc`];

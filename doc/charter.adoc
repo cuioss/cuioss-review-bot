@@ -3,8 +3,8 @@
 :toclevels: 2
 :icons: font
 
-What the reviewer is told to look for, how the charter is split into a spine and domain packs, and
-the rules any change to it follows.
+What the reviewer is told to look for in each of its two passes, how each pass's charter is split
+into a spine and domain packs, and the rules any change to them follows.
 
 == Purpose
 
@@ -15,26 +15,50 @@ charter naming the defect classes the organization ships, and the output that is
 repo_context_files` feeds it each repository's instruction documents, so it reviews against
 documented project rules.
 
-== Spine and packs
+A repository can add a second, independent *code-review pass*: correctness, error handling,
+resource lifecycle, duplication, documentation accuracy, test quality and contract drift, the
+categories a code reviewer weighs beside security. It runs as its own job with its own charter and
+publishes its own comment; see xref:#category-ceiling[Category ceiling] for why it is a separate
+pass and xref:workflow-integration.adoc#code-review-pass[The code-review pass] for how it runs.
 
-The charter has two parts:
+== Spines and packs
 
-* *The spine* — the cross-cutting categories and reporting rules that apply to every codebase. It
-is `[pr_reviewer] extra_instructions` in `.pr_agent.toml` (the central charter) and
-`packs/spine.md` (the first part of every assembled charter).
-* *Domain packs* — `packs/{key}.md`, each carrying one domain's own rules: the organization's
-standards for that language or artifact type, each naming the mechanism a diff breaks.
+Each pass's charter has two parts, a spine and domain packs, and `packs/` carries two separate sets
+of them:
 
-A repository that opts in receives the spine, then the packs it selects in the order it lists them,
-then its own `additional_rules`. The spine cannot be selected, deselected or preceded; see
-xref:consumer-guide.adoc[Consumer guide] for the declaration and
-xref:workflow-integration.adoc#charter-assembly[Charter assembly] for how the workflow composes it.
+[cols="1,2,2"]
+|===
+|Pass |Spine |Domain packs
+
+|Security
+|`packs/spine.md`, and `[pr_reviewer] extra_instructions` in `.pr_agent.toml` (the central charter)
+|`packs/{key}.md` without the `code-review-` prefix — `python`, `java`, `plugin`, …
+
+|Code review
+|`packs/code-review-spine.md`
+|`packs/code-review-{domain}.md` — `code-review-python`, `code-review-documentation`, …
+|===
+
+* *A spine* carries its pass's cross-cutting categories and reporting rules, which apply to every
+codebase. It is always the first part of that pass's assembled charter.
+* *A domain pack* carries one domain's own rules for that pass: the organization's standards for a
+language or artifact type, each naming the mechanism a diff breaks.
+
+The two sets do not mix. A security declaration selects security packs and a code-review
+declaration selects `code-review-*` packs, each by its full key.
+
+A repository that opts in to a pass receives that pass's spine, then the packs it selects in the
+order it lists them, then that pass's own `additional_rules`. A spine cannot be selected, deselected
+or preceded. The code-review pass with no packs listed runs on `code-review-spine.md` alone, and has
+no central fallback: it exists only where a repository declares it. See
+xref:consumer-guide.adoc[Consumer guide] for the declarations and
+xref:workflow-integration.adoc#charter-assembly[Charter assembly] for how the workflow composes them.
 
 `packs/` is generated, never hand-written. It is derived from the `cuioss/plan-marshall`
 marketplace, which holds the same bundle sources that define the organization's standards, and
 published into this repository by a pull request from that repository. A publish replaces
 `packs/` as a whole. The `Validate settings` check fails a pull request here that would leave
-`packs/` missing or empty, or `.pr_agent.toml` unparseable.
+`packs/` missing or empty, either spine missing or empty, or `.pr_agent.toml` unparseable.
 
 == Content rules
 
@@ -67,12 +91,20 @@ than replacing it. The charter's closing paragraphs therefore address that permi
 `A concise list (0-{num_max_findings} issues)`, so the model reads it as the expected shape of an
 answer. It is set high enough not to bind on a substantiated diff; it does not license padding.
 
+These rules bind both spines. Both passes read the same `[pr_reviewer]` section, so the
+empty-list contest and `num_max_findings` apply to each.
+
+[#category-ceiling]
 == Category ceiling
 
-A single prompt that accumulates rules degrades. The charter keeps to roughly ten categories, and a
-need beyond that is a second, focused pass, not another bullet. The generator in
-`cuioss/plan-marshall` enforces the ceiling with a test, and the same test fails when the
-substantiation bar or the anti-fabrication clause is diluted as packs are composed.
+A single prompt that accumulates rules degrades. Each charter keeps to roughly ten categories, and a
+need beyond that is a second, focused pass, not another bullet. The code-review pass is that second
+pass: its categories are not appended to the security charter, which would push one prompt well past
+the ceiling, but run as a separate prompt on its own spine. Each pass therefore stays within the
+ceiling, and the code-review pass keeps PR-Agent's security-concerns row rather than repeating the
+security categories. The generator in `cuioss/plan-marshall` enforces the ceiling on each spine with
+a test, and the same test fails when the substantiation bar or the anti-fabrication clause is
+diluted as packs are composed.
 
 == Verifying a charter change
 

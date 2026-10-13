@@ -121,8 +121,69 @@ Two steps exist because GitHub Actions cannot drop an `env:` key conditionally, 
 
 The consumer side of the declaration is described in xref:consumer-guide.adoc[Consumer guide].
 
+[#code-review-pass]
+== The code-review pass
+
+The second, code-review pass runs as a separate job, `code-review` (check `review / code-review`),
+in parallel with the security `review` job. Neither job depends on the other, and the
+code-review job runs only when the repository's `cuioss-review-bot:` block carries a nested
+`code_review:` block with `enabled: true`. That nested block is independent of the outer `enabled`;
+every other state skips the job. The skip rules and the `.plan/**` skip above apply to it
+unchanged.
+
+=== Its charter
+
+The job reads the same default-branch `.github/project.yml` as the security job and composes the
+code-review charter in a fixed order: `packs/code-review-spine.md`, each pack the block lists under
+`code_review.packs` in the listed order, then `code_review.additional_rules`. With no packs listed
+the charter is `code-review-spine.md` alone. The composed charter is echoed into the run log as an
+`Assembled code-review charter` group naming `code-review-spine`, the packs in order and the number
+of additional rules.
+
+A `code_review:` block that cannot be honoured fails the job with an `::error::` naming the cause,
+before its reviewer step runs: a non-mapping block, an unknown key, a non-boolean `enabled`, a
+`packs` or `additional_rules` that is not a list of strings, a pack key without the `code-review-`
+prefix, `code-review-spine` listed under `packs`, or a pack that does not exist or cannot be
+fetched.
+
+=== Its reviewer step
+
+The step runs the same pinned image with the same identity and Vertex AI credentials as the security
+step, and reads the same `.pr_agent.toml`, including the shared `[pr_reviewer]` section. Its
+environment overrides four settings — see
+xref:configuration-precedence.adoc#environment-variables[Environment variables outrank this file]:
+
+* `PR_REVIEWER.EXTRA_INSTRUCTIONS` carries the code-review charter;
+* `auto_describe` and `auto_improve` are `false`, so the pass runs `/review` only and never repeats
+the security job's `/describe` or `/improve`;
+* `CONFIG.PUBLISH_OUTPUT` is `false`, so PR-Agent produces the review without posting it.
+
+`require_security_review` is not overridden, so the code-review comment keeps PR-Agent's
+security-concerns row.
+
+=== Its publisher
+
+PR-Agent's persistent comment is located by its header, and every `/review` run publishes under
+`## PR Reviewer Guide 🔍`. Two passes publishing through PR-Agent itself would therefore overwrite
+each other's comment. The code-review step publishes nothing; a publisher script in the job takes
+the step's structured `review` output and posts it as a persistent comment headed
+`## PR Code Review Guide 🧭`, updating that comment in place on later runs. The security pass keeps
+`## PR Reviewer Guide 🔍`, so each pass updates only its own comment and the two never overwrite
+each other. The comment is posted as the `cuioss-review-bot` App, like the security review.
+
+=== Its fail-closed gate
+
+The code-review job has its own gate with the same oracle as the security job's: the reviewer
+step's structured `review` output, which exists whenever the model produced a review and is absent
+whenever every model call failed. An absent output fails the job, so a code-review pass whose model
+calls all failed never reports green. The gate covers only this job; the security job's gate is
+unchanged.
+
 [#fail-closed-gate]
 == Fail-closed gate
+
+This section describes the security `review` job's gate; the code-review job's gate is described
+under xref:#code-review-pass[The code-review pass].
 
 PR-Agent's GitHub Action runner catches its own exceptions and exits 0, so a run whose every model
 call failed reports success. The workflow ends with a gate whose oracle is the reviewer step's

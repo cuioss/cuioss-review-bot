@@ -8,8 +8,9 @@ name: Validate settings
 # own defaults, and the org silently reviews every pull request with none of the
 # tuning this repository exists to carry.
 #
-# So this workflow asserts the two properties that make the repository's content
-# usable at all, and nothing else. It deliberately does NOT lint the packs'
+# So this workflow asserts the properties that make the repository's content
+# usable at all — the TOML parses, the pack set is not empty, and both spines
+# are present and non-empty — and nothing else. It deliberately does NOT lint the packs'
 # Markdown or type-check the TOML's keys against PR-Agent's schema: the first is
 # style, and the second would pin this repository to a specific pr-agent version
 # and start failing on an upgrade it has no say in.
@@ -95,3 +96,26 @@ jobs:
             exit 1
           fi
           echo "Found ${pack_count} pack artifact(s)"
+
+      - name: Check both spines are present and non-empty
+        # Each review pass composes its charter on a spine that is always applied
+        # first: packs/spine.md for the security pass, packs/code-review-spine.md
+        # for the code-review pass. A non-empty pack set can still lack one of
+        # them, and an empty spine hands its pass a charter without the
+        # cross-cutting categories and reporting rules. A whitespace-only file
+        # counts as empty.
+        run: |
+          set -euo pipefail
+          status=0
+          for spine in packs/spine.md packs/code-review-spine.md; do
+            if [ ! -f "${spine}" ]; then
+              echo "::error file=${spine}::${spine} is missing; the pass that composes on it has no spine"
+              status=1
+            elif ! grep -q '[^[:space:]]' "${spine}"; then
+              echo "::error file=${spine}::${spine} is empty; the pass that composes on it has no spine"
+              status=1
+            else
+              echo "${spine} is present and non-empty"
+            fi
+          done
+          exit "${status}"
