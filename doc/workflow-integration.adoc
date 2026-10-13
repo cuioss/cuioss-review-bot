@@ -46,7 +46,8 @@ reviewer cannot trigger itself off its own comment.
 `.plan/` holds plan-marshall's machine-generated orchestration records. Two mechanisms keep it out
 of reviews:
 
-* The workflow's `changes` job skips the whole review when every changed file is under `.plan/`.
+* The workflow's `changes` job skips the whole review — the security job and the code-review job
+alike — when every changed file is under `.plan/`.
 * `[ignore] glob = [".plan/**"]` in `.pr_agent.toml` removes `.plan/` files from a mixed diff.
 `filter_ignored()` is called inside `GithubProvider.get_diff_files()`, so the filtered hunks never
 reach the model. This is a different code path from the dead `ignore_pr_*` keys above.
@@ -109,8 +110,10 @@ state keeps the central charter.
 
 A declaration that cannot be honoured fails the job with an `::error::` naming the cause, before
 either reviewer step runs: an unreadable file, malformed YAML, an unknown key, a non-boolean
-`enabled`, an unknown or unfetchable pack, `spine` listed under `packs:`, an empty composition, a
-duplicated key, or a legacy top-level `pr-agent:` block.
+`enabled`, an unknown or unfetchable pack, `spine` or a `code-review-` key listed under `packs:`, an
+empty composition, a duplicated key, a legacy top-level `pr-agent:` block, or a `code_review:` block
+that cannot be honoured (see xref:#code-review-pass[The code-review pass]). The code-review job runs
+the same declaration step and fails with it.
 
 The composed charter is echoed into the run log as an `Assembled review charter` group naming the
 spine, the packs in order and the number of additional rules. On the central path the log names the
@@ -121,8 +124,128 @@ Two steps exist because GitHub Actions cannot drop an `env:` key conditionally, 
 
 The consumer side of the declaration is described in xref:consumer-guide.adoc[Consumer guide].
 
+[#code-review-pass]
+== The code-review pass
+
+The second, code-review pass runs as a separate job, `code-review` (check `review / code-review`),
+in parallel with the security `review` job. Both depend only on the `changes` job, and each has its
+own fail-closed gate and its own persistent comment.
+
+=== When the job runs
+
+The job's `if:` guard copies the security job's `pull_request` arm term for term: the fork,
+`dependabot[bot]`, `cuioss-release-bot[bot]` (and `{owner}-release-bot[bot]`) and `skip-bot-review`
+skip rules, and the `changes` job's `.plan/**`-only skip. A pull request guarded out there shows
+both checks as skipped. Of the comment commands it admits `/review` alone, under the same gate on
+who may trigger it, so a `/review` comment re-runs both passes; `/improve`, `/describe`, `/ask` and
+`/help` stay with the security job.
+
+Within those rules the job always runs: whether the pass is wanted is decided by its declaration
+step, not by the guard. A repository that declares no `code_review:` block with `enabled: true` —
+including one that declares nothing at all — gets a `code-review` job that reads the declaration,
+logs one line naming the declaration state that skipped the pass, skips every later step, and ends
+green. No Google Cloud authentication and no reviewer run take place.
+
+=== Comment-triggered runs
+
+On a comment-triggered run PR-Agent executes the comment as its command line and applies every
+`--section.key=value` token *after* the step's environment, so `/review --config.publish_output=true`
+would switch publishing back on and overwrite the security review's comment, and other tokens could
+rewrite the code-review charter. When the pass runs on a comment, a step before the reviewer,
+`Refuse a /review comment carrying options` (`workflow-scripts/check-code-review-command.py`),
+therefore admits a plain `/review` only. It tokenizes the comment the way the pinned PR-Agent does,
+case-insensitively, and fails the job with one `::error::` ending `Comment a plain '/review' to
+review both passes` when:
+
+* the first token is not `/review` — another command, `/reviewer`, or an empty comment;
+* any later token is an option, quoted or not — `--config.publish_output=true`, `-i` and every other
+`-` or `--` token;
+* the comment cannot be tokenized.
+
+Free words after the command, as in `/review please look at the parser`, are accepted; `/review`
+ignores them. `/review -i` (incremental review) is refused like any other option, so in a
+repository that runs the pass it fails the `review / code-review` job while the security job runs
+it as before. The step does not run on `pull_request` events, nor when the pass is not declared.
+
+=== Its charter
+
+The declaration step reads the same default-branch `.github/project.yml` with the same script as
+the security job's declaration step, and takes the script's code-review outputs. Only a
+`code_review:` block with `enabled: true` runs the pass, independently of the outer `enabled`. The
+charter is composed in a fixed order: `packs/code-review-spine.md`, each pack listed under
+`code_review.packs` in the listed order, then `code_review.additional_rules`. With no packs listed
+the charter is `code-review-spine.md` alone. The composed charter is echoed into the run log as an
+`Assembled code-review charter` group naming `code-review-spine`, the packs in order and the number
+of additional rules.
+
+Because both jobs run the same declaration script over the same file, a declaration that cannot be
+honoured fails *both* jobs with the same `::error::`. That includes a `code_review:` block that
+cannot be honoured, whether or not it is enabled: a non-mapping block, an unknown key, a non-boolean
+`enabled`, a `packs` or `additional_rules` that is not a list of strings, a pack key without the
+`code-review-` prefix or naming `code-review-spine`, and — when enabled — a code-review pack that is
+unknown, unfetchable or empty. A `code-review-` key under the outer `packs:` fails both jobs as
+well; the two passes' packs never mix.
+
+=== Its reviewer step
+
+The step runs the same pinned image with the same App token and Vertex AI credentials as the
+security step, and reads the same `.pr_agent.toml`, including the shared `[pr_reviewer]` section.
+Its environment is the central reviewer step's with four named exceptions — see
+xref:configuration-precedence.adoc#environment-variables[Environment variables outrank this file]:
+
+* `PR_REVIEWER.EXTRA_INSTRUCTIONS` carries the code-review charter;
+* `github_action_config.auto_describe` and `github_action_config.auto_improve` are literal `false`,
+so the pass runs `/review` only, whatever the caller's inputs and labels ask of the security job;
+* `CONFIG.PUBLISH_OUTPUT` is `false`, so PR-Agent produces the review without posting it. PR-Agent
+re-applies environment overrides after merging every `.pr_agent.toml`, so no settings file can turn
+publishing back on.
+
+`require_security_review` is not overridden, so the code-review comment keeps PR-Agent's
+security-concerns row.
+
+=== Its publisher
+
+PR-Agent renders every `/review` under `## PR Reviewer Guide 🔍` and locates its persistent comment
+by that header, so a second pass publishing through PR-Agent would overwrite the security review's
+comment. The code-review step therefore publishes nothing. A publisher step,
+`workflow-scripts/publish-code-review.py` in `cuioss/cuioss-organization`, runs in the same pinned
+image whenever the reviewer step wrote a `review` output: it renders that output with PR-Agent's own
+renderer, replaces the header with `## PR Code Review Guide 🧭`, and publishes it as a persistent
+comment of its own, created or updated in place, under the `cuioss-review-bot` App identity. The two
+headers share no prefix, so neither pass can find or update the other's comment.
+
+PR-Agent's persistent-comment call swallows its own failures, so the publisher does not trust it.
+It reads the pull request's comments back and reports success only when a comment opens with
+`## PR Code Review Guide 🧭` and carries exactly the review this run rendered, once PR-Agent's
+`(Code review updated until commit …)` line is set aside and line endings are normalized.
+
+Content is the only proof; a timestamp is not consulted. Comment-triggered runs are not
+serialized — each comment has its own concurrency group and nothing is cancelled — so an
+overlapping run can leave a freshly updated comment that carries another run's review. A comment
+with other text therefore fails the step however recently it was updated, and the error names both
+possible causes: the publish failed, or another run's review replaced it. Content identity also
+holds when a re-run on an unchanged commit renders identical text and GitHub leaves `updated_at`
+alone. A match on the security review's `## PR Reviewer Guide 🔍` comment never counts.
+
+A review longer than PR-Agent's 65,000-character comment limit is published truncated, so it can
+never match the rendered text, and the pass fails closed rather than reporting it published.
+
+=== Its fail-closed gate
+
+The code-review job ends with its own gate, the security gate applied to this pass. Its oracle is
+the same — the reviewer step's structured `review` output, never a published comment — and so is
+its scope: reviewed `pull_request` actions with `auto-review` on, and `/review` comments. It fails
+when that output is absent. Unlike the security gate, it also fails when the publisher did not
+confirm a `## PR Code Review Guide 🧭` comment carrying exactly this run's review, because this pass
+always publishes; its error then reads `No '## PR Code Review Guide 🧭' comment carries this run's
+code review` and points to the `Publish the code review` step's log. The gate runs only when the
+pass runs; a repository without the pass never reaches it.
+
 [#fail-closed-gate]
 == Fail-closed gate
+
+This section describes the security `review` job's gate; the code-review job's gate is described
+under xref:#code-review-pass[The code-review pass].
 
 PR-Agent's GitHub Action runner catches its own exceptions and exits 0, so a run whose every model
 call failed reports success. The workflow ends with a gate whose oracle is the reviewer step's

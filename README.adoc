@@ -25,7 +25,7 @@ The organization runs three automated pull request reviewers:
 
 |cuioss-review-bot (PR-Agent)
 |*This repository*
-|Security- and correctness-weighted review
+|Security- and correctness-weighted review, plus an opt-in second code-review pass
 |===
 
 PR-Agent reads its organization-level settings from `.pr_agent.toml` at the root of this
@@ -49,14 +49,17 @@ https://github.com/cuioss/cuioss-organization/blob/main/.github/workflows/reusab
 charter, and the `/improve` tuning.
 
 |`packs/`
-|The review charter artifacts: `spine.md` and one pack per domain. Generated in
-`cuioss/plan-marshall` and published here; never edited by hand.
+|The review charter artifacts, as two pack sets. The security pass composes on `spine.md` and the
+security packs (`python.md`, `java.md`, …); the code-review pass composes on `code-review-spine.md`
+and the `code-review-*.md` packs. Generated in `cuioss/plan-marshall` and published here; never
+edited by hand.
 
 |`doc/`
 |The documentation listed below.
 
 |`.github/workflows/validate-packs.yml`
-|The `Validate settings` check: `.pr_agent.toml` parses and `packs/` is not empty.
+|The `Validate settings` check: `.pr_agent.toml` parses, `packs/` is not empty, and both
+`spine.md` and `code-review-spine.md` are present and non-empty.
 |===
 
 == Using it
@@ -67,23 +70,25 @@ https://github.com/cuioss/cuioss-organization/blob/main/docs/workflow-examples/c
 
 Without further configuration the reviewer applies the central charter. A repository selects its
 own charter — the spine plus the domain packs it names — with a `cuioss-review-bot:` block in
-`.github/project.yml`; xref:doc/consumer-guide.adoc[Consumer guide] covers that opt-in from start to
+`.github/project.yml`, and opts in to the second, code-review pass with a nested `code_review:` block
+in the same place; xref:doc/consumer-guide.adoc[Consumer guide] covers both opt-ins from start to
 finish.
 
 == Documentation
 
 * xref:doc/consumer-guide.adoc[Consumer guide] — selecting packs, the four states of `enabled`,
-what fails the review, and how to read the assembled charter in the run log.
+declaring the code-review pass, what fails the review, and how to read the assembled charters in the
+run log.
 * xref:doc/configuration-precedence.adoc[Configuration precedence] — resolution order, the
 environment-variable exceptions, how PR-Agent finds this repository, and the review token scope.
 * xref:doc/workflow-integration.adoc[Workflow integration] — skip rules, the `.plan/**` skip,
-image pinning, the reviewer identity, Vertex AI credentials, charter assembly, the fail-closed
-gate, and the tools.
+image pinning, the reviewer identity, Vertex AI credentials, charter assembly, the code-review pass,
+the fail-closed gates, and the tools.
 * xref:doc/models.adoc[Models] — the model ladder, its selection rules, and the model parameters.
 * xref:doc/review-limits.adoc[Review limits] — what the reviewer cannot see and how to read a
 review with that in mind.
-* xref:doc/charter.adoc[Charter] — the spine and packs, the content rules, the category ceiling,
-and how a charter change is verified.
+* xref:doc/charter.adoc[Charter] — the two spines and pack sets, the content rules, the category
+ceiling, and how a charter change is verified.
 
 == See also
 

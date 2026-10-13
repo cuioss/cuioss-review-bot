@@ -27,9 +27,10 @@ global file once per run, so a change here is live on the next review.
 A repository can opt out of this file with `use_global_settings_file = false` in its own
 `.pr_agent.toml`.
 
+[#environment-variables]
 == Environment variables outrank this file
 
-The reusable workflow sets environment variables on the reviewer step for four things only,
+The reusable workflow sets environment variables on the reviewer steps for the things below only,
 because anything set there silently overrides this file:
 
 * the review token and the Vertex AI credentials path;
@@ -39,7 +40,38 @@ are carried as organization variables so the project id stays out of this public
 so a single repository can change them without editing this file;
 * `PR_REVIEWER.EXTRA_INSTRUCTIONS`, only on the assembled reviewer step, carrying the charter a
 repository selects for itself — see xref:workflow-integration.adoc#charter-assembly[Charter
-assembly].
+assembly];
+* the code-review step's own exceptions, listed below.
+
+The reviewer step of the `code-review` job reads the same `.pr_agent.toml`, including the
+`[pr_reviewer]` section it shares with the security pass. Its environment is the central reviewer
+step's — the token, the Vertex AI settings and the `auto_review` caller input included — with
+exactly these exceptions:
+
+[cols="1,1,2"]
+|===
+|Variable |Value |Reason
+
+|`PR_REVIEWER.EXTRA_INSTRUCTIONS`
+|The code-review charter
+|The pass reviews against `packs/code-review-spine.md`, its selected packs and its own
+`additional_rules`, never the security charter.
+
+|`github_action_config.auto_describe`, `github_action_config.auto_improve`
+|literal `false`
+|The pass runs `/review` only, whatever the caller inputs and labels ask of the security job.
+
+|`CONFIG.PUBLISH_OUTPUT`
+|`false`
+|PR-Agent would publish under the security pass's header and overwrite its comment; a publisher
+script posts the code-review comment under its own header instead — see
+xref:workflow-integration.adoc#code-review-pass[The code-review pass]. PR-Agent re-applies
+environment overrides after merging every `.pr_agent.toml`, so no settings file, this one or a
+repository-local one, can turn publishing back on for this step.
+|===
+
+`require_security_review` and every other `[pr_reviewer]` key apply to the code-review pass as
+written here.
 
 Model and review tuning are never set in a workflow `env:` block. Upstream examples set
 `config.model` there; doing that in a caller would decentralize the most important setting.
