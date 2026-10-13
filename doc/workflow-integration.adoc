@@ -216,15 +216,19 @@ headers share no prefix, so neither pass can find or update the other's comment.
 
 PR-Agent's persistent-comment call swallows its own failures, so the publisher does not trust it.
 It reads the pull request's comments back and reports success only when a comment opens with
-`## PR Code Review Guide 🧭` and either
+`## PR Code Review Guide 🧭` and carries exactly the review this run rendered, once PR-Agent's
+`(Code review updated until commit …)` line is set aside and line endings are normalized.
 
-* carries exactly the review this run rendered, once PR-Agent's `(Code review updated until commit
-…)` line is set aside and line endings are normalized — a re-run on an unchanged commit renders
-identical text, and GitHub need not move `updated_at` for an edit that changes nothing; or
-* was created or updated at or after the job's start.
+Content is the only proof; a timestamp is not consulted. Comment-triggered runs are not
+serialized — each comment has its own concurrency group and nothing is cancelled — so an
+overlapping run can leave a freshly updated comment that carries another run's review. A comment
+with other text therefore fails the step however recently it was updated, and the error names both
+possible causes: the publish failed, or another run's review replaced it. Content identity also
+holds when a re-run on an unchanged commit renders identical text and GitHub leaves `updated_at`
+alone. A match on the security review's `## PR Reviewer Guide 🔍` comment never counts.
 
-It fails when no comment carries the header, or when the only one has other content and an older
-`updated_at`. A match on the security review's `## PR Reviewer Guide 🔍` comment never counts.
+A review longer than PR-Agent's 65,000-character comment limit is published truncated, so it can
+never match the rendered text, and the pass fails closed rather than reporting it published.
 
 === Its fail-closed gate
 
@@ -232,9 +236,10 @@ The code-review job ends with its own gate, the security gate applied to this pa
 the same — the reviewer step's structured `review` output, never a published comment — and so is
 its scope: reviewed `pull_request` actions with `auto-review` on, and `/review` comments. It fails
 when that output is absent. Unlike the security gate, it also fails when the publisher did not
-confirm a `## PR Code Review Guide 🧭` comment carrying this run's review or updated during this
-run, because this pass always publishes. The gate
-runs only when the pass runs; a repository without the pass never reaches it.
+confirm a `## PR Code Review Guide 🧭` comment carrying exactly this run's review, because this pass
+always publishes; its error then reads `No '## PR Code Review Guide 🧭' comment carries this run's
+code review` and points to the `Publish the code review` step's log. The gate runs only when the
+pass runs; a repository without the pass never reaches it.
 
 [#fail-closed-gate]
 == Fail-closed gate

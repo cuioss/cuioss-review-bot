@@ -175,9 +175,12 @@ Every failure under xref:#what-fails-the-review[What fails the review] fails bot
 way.
 
 When the pass runs, the `review / code-review` job also fails when the model produced no review,
-or when the publisher cannot find a `## PR Code Review Guide 🧭` comment carrying this run's review
-or updated during the run — see xref:workflow-integration.adoc#code-review-pass[The code-review
-pass].
+or when no `## PR Code Review Guide 🧭` comment carries exactly this run's review — the error reads
+`No '## PR Code Review Guide 🧭' comment carries this run's code review`. Its causes are a failed
+publish, another run's review replacing the comment while two `/review` runs overlapped, or a review
+over PR-Agent's 65,000-character comment limit, which is published truncated and cannot match. Read
+the log of the `Publish the code review` step, and comment `/review` again once no other run is in
+progress. See xref:workflow-integration.adoc#code-review-pass[The code-review pass].
 
 === Re-running it with `/review`
 
