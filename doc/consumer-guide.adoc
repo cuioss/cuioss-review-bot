@@ -175,8 +175,22 @@ Every failure under xref:#what-fails-the-review[What fails the review] fails bot
 way.
 
 When the pass runs, the `review / code-review` job also fails when the model produced no review,
-or when its comment was not published fresh — see
-xref:workflow-integration.adoc#code-review-pass[The code-review pass].
+or when the publisher cannot find a `## PR Code Review Guide 🧭` comment carrying this run's review
+or updated during the run — see xref:workflow-integration.adoc#code-review-pass[The code-review
+pass].
+
+=== Re-running it with `/review`
+
+A `/review` comment re-runs both passes. In a repository that runs the code-review pass, that job
+accepts a plain `/review` only, in any case and optionally followed by free words such as
+`/review please look at the parser`. It fails with one `::error::` ending `Comment a plain
+'/review' to review both passes` when the comment carries any option token, quoted or not — for
+example `--config.publish_output=true` or `-i` — or is not a `/review` command, as `/reviewer` is
+not. Options are refused because PR-Agent applies them after the workflow's settings, where they
+could switch the pass's publishing back on over the security review or change its charter.
+
+`/review -i` (incremental review) therefore fails the `review / code-review` job, while the
+security job still runs it. Comment a plain `/review` to review both passes.
 
 [#what-fails-the-review]
 == What fails the review

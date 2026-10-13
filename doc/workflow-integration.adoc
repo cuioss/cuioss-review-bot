@@ -146,6 +146,27 @@ including one that declares nothing at all — gets a `code-review` job that rea
 logs one line naming the declaration state that skipped the pass, skips every later step, and ends
 green. No Google Cloud authentication and no reviewer run take place.
 
+=== Comment-triggered runs
+
+On a comment-triggered run PR-Agent executes the comment as its command line and applies every
+`--section.key=value` token *after* the step's environment, so `/review --config.publish_output=true`
+would switch publishing back on and overwrite the security review's comment, and other tokens could
+rewrite the code-review charter. When the pass runs on a comment, a step before the reviewer,
+`Refuse a /review comment carrying options` (`workflow-scripts/check-code-review-command.py`),
+therefore admits a plain `/review` only. It tokenizes the comment the way the pinned PR-Agent does,
+case-insensitively, and fails the job with one `::error::` ending `Comment a plain '/review' to
+review both passes` when:
+
+* the first token is not `/review` — another command, `/reviewer`, or an empty comment;
+* any later token is an option, quoted or not — `--config.publish_output=true`, `-i` and every other
+`-` or `--` token;
+* the comment cannot be tokenized.
+
+Free words after the command, as in `/review please look at the parser`, are accepted; `/review`
+ignores them. `/review -i` (incremental review) is refused like any other option, so in a
+repository that runs the pass it fails the `review / code-review` job while the security job runs
+it as before. The step does not run on `pull_request` events, nor when the pass is not declared.
+
 === Its charter
 
 The declaration step reads the same default-branch `.github/project.yml` with the same script as
@@ -193,9 +214,17 @@ renderer, replaces the header with `## PR Code Review Guide 🧭`, and publishes
 comment of its own, created or updated in place, under the `cuioss-review-bot` App identity. The two
 headers share no prefix, so neither pass can find or update the other's comment.
 
-PR-Agent's persistent-comment call swallows its own failures, so the publisher does not trust it:
-it reads the pull request's comments back and reports success only when a comment opening with
-`## PR Code Review Guide 🧭` was created or updated at or after the job's start.
+PR-Agent's persistent-comment call swallows its own failures, so the publisher does not trust it.
+It reads the pull request's comments back and reports success only when a comment opens with
+`## PR Code Review Guide 🧭` and either
+
+* carries exactly the review this run rendered, once PR-Agent's `(Code review updated until commit
+…)` line is set aside and line endings are normalized — a re-run on an unchanged commit renders
+identical text, and GitHub need not move `updated_at` for an edit that changes nothing; or
+* was created or updated at or after the job's start.
+
+It fails when no comment carries the header, or when the only one has other content and an older
+`updated_at`. A match on the security review's `## PR Reviewer Guide 🔍` comment never counts.
 
 === Its fail-closed gate
 
@@ -203,7 +232,8 @@ The code-review job ends with its own gate, the security gate applied to this pa
 the same — the reviewer step's structured `review` output, never a published comment — and so is
 its scope: reviewed `pull_request` actions with `auto-review` on, and `/review` comments. It fails
 when that output is absent. Unlike the security gate, it also fails when the publisher did not
-confirm a fresh `## PR Code Review Guide 🧭` comment, because this pass always publishes. The gate
+confirm a `## PR Code Review Guide 🧭` comment carrying this run's review or updated during this
+run, because this pass always publishes. The gate
 runs only when the pass runs; a repository without the pass never reaches it.
 
 [#fail-closed-gate]
